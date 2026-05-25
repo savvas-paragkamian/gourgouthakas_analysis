@@ -1,3 +1,16 @@
+######################################################################################################
+# script name: pangenome_functions.R
+# developed by: Nikolaos P. Arapitsas
+# framework: SarrisLab
+######################################################################################################
+# GOAL:
+# Aim of this script is to obtain functional info for unique genes of SRL1060, the uniquely shared genes
+# of SRL1060 with SRL740 and SRL742, and the uniquely shared genes of SRL740 and SRL742.
+######################################################################################################
+# usage:./pangenome_functions.R
+# complete path: /home/nik_arapitsas/Documents/gourgouthakas_analysis/scripts/pangenome_functions.R
+######################################################################################################
+
 library(tidyverse)
 
 # ============================================================
@@ -182,17 +195,26 @@ write_tsv(
 # ============================================================
 
 SRL1060_unique_genes_annotated %>%
-  filter(!is.na(`function`)) %>%
+  mutate(
+    source = if_else(is.na(source), "No annotation source", source),
+    `function` = if_else(is.na(`function`), "Unknown / unannotated", `function`)
+  ) %>%
   count(source, `function`, sort = TRUE) %>%
   write_tsv("SRL1060_unique_function_summary.tsv")
 
 SRL740_742_1060_shared_unique_genes_annotated %>%
-  filter(!is.na(`function`)) %>%
+  mutate(
+    source = if_else(is.na(source), "No annotation source", source),
+    `function` = if_else(is.na(`function`), "Unknown / unannotated", `function`)
+  ) %>%
   count(source, `function`, sort = TRUE) %>%
   write_tsv("SRL740_SRL742_SRL1060_shared_unique_function_summary.tsv")
 
 SRL740_742_shared_unique_genes_annotated %>%
-  filter(!is.na(`function`)) %>%
+  mutate(
+    source = if_else(is.na(source), "No annotation source", source),
+    `function` = if_else(is.na(`function`), "Unknown / unannotated", `function`)
+  ) %>%
   count(source, `function`, sort = TRUE) %>%
   write_tsv("SRL740_SRL742_shared_unique_function_summary.tsv")
 
