@@ -141,7 +141,9 @@ sqlite3 -header -separator $'\t' Streptomyces_Pangenome-PAN.db "SELECT gene_clus
 
 ## 2) Pangenome analysis of our three isolates 
 
+```
 cd ../Streptomyces_genomes_db
+```
 
 1) Create a genomes-storage database file for only the genomes of our three isolates
 
@@ -191,4 +193,48 @@ A directory for the pangenome graphs was created in the "Streptomyces_genomes_an
 mkdir Streptomyces_genomes_anvio_Graphs
 ```
 
-The files Streptomyces_gene_cluster_output.txt and BiobankStreptomyces_gene_cluster_output.txt were copied inside the "Streptomyces_genomes_anvio_Graphs". Then, the graphs were created in R (version 4.5.1) using the [pangenome_graphs.R](scripts/pangenome_graphs.R) script. This script was executed inside the "Streptomyces_genomes_anvio_Graphs" directory. 
+The files Streptomyces_gene_cluster_output.txt and BiobankStreptomyces_gene_cluster_output.txt were copied inside the "Streptomyces_genomes_anvio_Graphs". Then, the graphs were created in R (version 4.5.1) using the [scripts/pangenome_graphs.R](scripts/pangenome_graphs.R) script. This script was executed inside the "Streptomyces_genomes_anvio_Graphs" directory. 
+
+## Obtain functional info about our three cave isolates from the pangenome analysis output
+
+A directory for the output files of this analysis was created in the "Streptomyces_genomes_anvio" directory, using the following command:
+
+```
+mkdir Streptomyces_functions
+```
+```
+cd Streptomyces_functions
+```
+
+1) Export the gene cluster membership table 
+
+```
+anvi-export-gene-clusters \
+  -p ../Streptomyces_pangenome/Streptomyces_Pangenome-PAN.db \
+  -o Streptomyces_gene_clusters.tsv
+```
+
+2) Export functional info for each of the three isolates
+
+```
+anvi-export-functions \
+  -c ../Streptomyces_genomes_db/SRL740.db \
+  -o SRL740_functions.tsv
+```
+```
+anvi-export-functions \
+  -c ../Streptomyces_genomes_db/SRL742.db \
+  -o SRL742_functions.tsv
+```
+```
+anvi-export-functions \
+  -c ../Streptomyces_genomes_db/SRL1060.db \
+  -o SRL1060_functions.tsv
+```
+
+```
+awk 'FNR==1 && NR!=1 {next} {print}' SRL1060_functions.tsv SRL740_functions.tsv SRL742_functions.tsv \
+  > SRL_isolates_functions.tsv
+```
+
+ The exported tables were analyzed in R (version 4.5.1) using the [pangenome_functions.R](scripts/pangenome_functions.R) script. This script was executed inside the "Streptomyces_functions" directory.
