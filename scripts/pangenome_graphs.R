@@ -24,13 +24,13 @@ pangenome_table <- read_delim(pangenome_file, delim = "\t", col_types = cols())
 # Count number of genomes in the pangenome analysis
 n_genomes <- length(unique(pangenome_table$genome_name))
 
-# Summarize gene clusters into core, accessory, and species-specific
+# Summarize gene clusters into core, accessory, and genome-specific
 pangenome_data <- pangenome_table %>%
   distinct(gene_cluster_id, genome_name) %>%
   count(gene_cluster_id) %>%
   mutate(category = case_when(
     n == n_genomes ~ "core",
-    n == 1 ~ "species-specific",
+    n == 1 ~ "genome-specific",
     TRUE ~ "accessory"
   )) %>%
   count(category) %>%
@@ -44,7 +44,7 @@ pangenome_data <- pangenome_table %>%
 # Set category order
 pangenome_data$category <- factor(
   pangenome_data$category,
-  levels = c("species-specific", "accessory", "core")
+  levels = c("genome-specific", "accessory", "core")
 )
 
 # Make one stacked bar
@@ -61,11 +61,11 @@ pangenome_barplot <- ggplot(
     fontface = "bold"
   ) +
   scale_fill_manual(
-    breaks = c("core", "accessory", "species-specific"),
+    breaks = c("core", "accessory", "genome-specific"),
     values = c(
       "core" = "#56B4E9",
       "accessory" = "#CC79A7",
-      "species-specific" = "#E69F00"
+      "genome-specific" = "#E69F00"
     )
   ) +
   scale_y_continuous(
@@ -154,15 +154,16 @@ colnames(Streptomyces_matrix) <- ifelse(
 # UpSet plot
 png("Streptomyces_upset.png", width = 4900, height = 4000, res = 300)
 
+print(
 upset(
-  Streptomyces_matrix,
+  as.data.frame(Streptomyces_matrix),
   sets = colnames(Streptomyces_matrix),
   order.by = "freq",
   mainbar.y.label = "\n\n\n\n\n\n\n\nGene Cluster Intersections - Streptomyces",
   sets.x.label = "Gene Clusters per Genome",
   text.scale = c(1.3, 1.5, 1.5, 1.5, 1.5, 1.3)
 )
-
+)
 dev.off()
 
 
@@ -176,13 +177,13 @@ biobank_pangenome_table <- read_delim(biobank_pangenome_file, delim = "\t", col_
 # Count number of genomes in the pangenome analysis
 n_genomes <- length(unique(biobank_pangenome_table$genome_name))
 
-# Summarize gene clusters into core, accessory, and species-specific
+# Summarize gene clusters into core, accessory, and genome-specific
 biobank_pangenome_data <- biobank_pangenome_table %>%
   distinct(gene_cluster_id, genome_name) %>%
   count(gene_cluster_id) %>%
   mutate(category = case_when(
     n == n_genomes ~ "core",
-    n == 1 ~ "species-specific",
+    n == 1 ~ "genome-specific",
     TRUE ~ "accessory"
   )) %>%
   count(category) %>%
@@ -196,7 +197,7 @@ biobank_pangenome_data <- biobank_pangenome_table %>%
 # Set category order
 biobank_pangenome_data$category <- factor(
   biobank_pangenome_data$category,
-  levels = c("species-specific", "accessory", "core")
+  levels = c("genome-specific", "accessory", "core")
 )
 
 # Make one stacked bar
@@ -213,11 +214,11 @@ biobank_pangenome_barplot <- ggplot(
     fontface = "bold"
   ) +
   scale_fill_manual(
-    breaks = c("core", "accessory", "species-specific"),
+    breaks = c("core", "accessory", "genome-specific"),
     values = c(
       "core" = "#56B4E9",
       "accessory" = "#CC79A7",
-      "species-specific" = "#E69F00"
+      "genome-specific" = "#E69F00"
     )
   ) +
   scale_y_continuous(
@@ -289,13 +290,14 @@ colnames(biobank_Streptomyces_matrix) <- ifelse(
 # UpSet plot
 png("Biobank_Streptomyces_upset.png", width = 4900, height = 4000, res = 300)
 
+print(
 upset(
-  biobank_Streptomyces_matrix,
+  as.data.frame(biobank_Streptomyces_matrix),
   sets = colnames(biobank_Streptomyces_matrix),
   order.by = "freq",
   mainbar.y.label = "\n\n\n\n\n\nGene Cluster Intersections - Biobank Streptomyces",
   sets.x.label = "Gene Clusters per Genome",
   text.scale = c(1.2, 1.2, 1, 0.9, 1.0, 1.1)
 )
-
+)
 dev.off()
