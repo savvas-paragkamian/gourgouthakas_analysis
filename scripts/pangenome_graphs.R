@@ -105,7 +105,7 @@ pangenome_barplot <- ggplot(
 
 # Save plot
 ggsave(
-  filename = "../figures/Streptomyces_pangenome_stacked_barplot.png",
+  filename = "../plots/Streptomyces_pangenome_stacked_barplot.png",
   plot = pangenome_barplot,
   height = 20, 
   width = 25,
@@ -152,7 +152,7 @@ colnames(Streptomyces_matrix) <- ifelse(
 )
 
 # UpSet plot
-png("../figures/Streptomyces_upset.png", width = 4900, height = 4000, res = 300)
+png("../plots/Streptomyces_upset.png", width = 4900, height = 4000, res = 300)
 
 print(
 upset(
@@ -257,7 +257,7 @@ biobank_pangenome_barplot <- ggplot(
   )
 # Save plot
 ggsave(
-  filename = "../figures/Biobank_Streptomyces_pangenome_stacked_barplot.png",
+  filename = "../plots/Biobank_Streptomyces_pangenome_stacked_barplot.png",
   plot = biobank_pangenome_barplot,
   height = 20, 
   width = 25,
