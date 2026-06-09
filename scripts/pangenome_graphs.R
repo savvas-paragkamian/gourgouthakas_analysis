@@ -16,7 +16,7 @@
 library(tidyverse)
 
 # Input file
-pangenome_file <- "Streptomyces_gene_cluster_output.txt"
+pangenome_file <- "../Streptomyces_genomes_anvio/Streptomyces_pangenome/Streptomyces_gene_cluster_output.txt"
 
 # Read table
 pangenome_table <- read_delim(pangenome_file, delim = "\t", col_types = cols())
@@ -105,7 +105,7 @@ pangenome_barplot <- ggplot(
 
 # Save plot
 ggsave(
-  filename = "Streptomyces_pangenome_stacked_barplot.png",
+  filename = "../figures/Streptomyces_pangenome_stacked_barplot.png",
   plot = pangenome_barplot,
   height = 20, 
   width = 25,
@@ -152,7 +152,7 @@ colnames(Streptomyces_matrix) <- ifelse(
 )
 
 # UpSet plot
-png("Streptomyces_upset.png", width = 4900, height = 4000, res = 300)
+png("../figures/Streptomyces_upset.png", width = 4900, height = 4000, res = 300)
 
 print(
 upset(
@@ -169,7 +169,7 @@ dev.off()
 
 # 3) Barplot for the biobank's Streptomyces pangenome
 
-biobank_pangenome_file <- "BiobankStreptomyces_gene_cluster_output.txt"
+biobank_pangenome_file <- "../Streptomyces_genomes_anvio/BiobankStreptomyces_Pangenome/BiobankStreptomyces_gene_cluster_output.txt"
 
 # Read table
 biobank_pangenome_table <- read_delim(biobank_pangenome_file, delim = "\t", col_types = cols())
@@ -257,7 +257,7 @@ biobank_pangenome_barplot <- ggplot(
   )
 # Save plot
 ggsave(
-  filename = "Biobank_Streptomyces_pangenome_stacked_barplot.png",
+  filename = "../figures/Biobank_Streptomyces_pangenome_stacked_barplot.png",
   plot = biobank_pangenome_barplot,
   height = 20, 
   width = 25,
