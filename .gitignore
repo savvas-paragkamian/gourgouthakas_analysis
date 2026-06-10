@@ -1,0 +1,14 @@
+# reference databases (large, downloaded by scripts/sanger/setup_db.sh)
+data/ref/
+
+# pipeline outputs (but keep the hand-edited sampling-depth table)
+results/*
+!results/gourgouthakas_depth_table.tsv
+
+# raw ABI trace folders (large binary Sanger data)
+data/*_ABI/
+data/*_ab1/
+
+# macOS
+.DS_Store
+**/.DS_Store
