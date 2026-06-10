@@ -9,7 +9,7 @@
 # Run:    podman run --rm -v "$PWD":/work -w /work sanger16s \
 #               bash scripts/sanger/run.sh
 #
-FROM mambaorg/micromamba:1.5.10
+FROM docker.io/mambaorg/micromamba:1.5.10
 
 LABEL org.opencontainers.image.title="sanger16s" \
       org.opencontainers.image.description="CLI replica of the isolateR Sanger 16S pipeline"
@@ -30,11 +30,13 @@ RUN micromamba install -y -n base -c conda-forge -c bioconda \
         tar \
     && micromamba clean --all --yes
 
-# R toolchain for pruning/plotting the GTDB master tree (06_gtdb_tree.R).
+# R toolchain for pruning/plotting the GTDB master tree (06_gtdb_tree.R) and the
+# pangenome gene-cluster graphs (scripts/genomes/pangenome_graphs.R: UpSetR).
 RUN micromamba install -y -n base -c conda-forge -c bioconda \
         r-base \
         r-tidyverse \
         r-ape \
+        r-upsetr \
         bioconductor-ggtree \
         bioconductor-treeio \
         r-tidytree \
@@ -57,4 +59,4 @@ CMD ["bash","-c","vsearch --version 2>&1 | head -1; tracy --version; \
         seqkit version; taxonkit version; mafft --version 2>&1 | head -1; \
         FastTree 2>&1 | head -1; \
         python -c 'import Bio; print(\"biopython\", Bio.__version__)'; \
-        Rscript -e 'cat(R.version.string,\"\\n\"); library(ggtree); cat(\"ggtree\", as.character(packageVersion(\"ggtree\")), \"\\n\")'"]
+        Rscript -e 'cat(R.version.string,\"\\n\"); library(ggtree); cat(\"ggtree\", as.character(packageVersion(\"ggtree\")), \"\\n\"); library(UpSetR); cat(\"UpSetR\", as.character(packageVersion(\"UpSetR\")), \"\\n\")'"]
