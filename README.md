@@ -322,6 +322,25 @@ stripped), and compares the species epithet ignoring SILVA placeholders such as
 the cave isolates the largest is the split of the *Pseudomonas* complex into
 *Aquipseudomonas*, *Stutzerimonas*, and *Neopusillimonas*.
 
+### Combined taxonomy table
+
+[scripts/sanger/08_taxonomy_table.py](scripts/sanger/08_taxonomy_table.py)
+merges the SILVA, NCBI and GTDB assignments of every isolate into a single
+`results/taxonomy_per_microbe.tsv`, with each database's reference identifier
+(best hit), % identity, genus, species and full lineage side by side:
+
+```
+podman run --rm -v "$PWD":/work -w /work sanger16s \
+  python scripts/sanger/08_taxonomy_table.py
+```
+
+It reads the **per-batch** isoTAX outputs rather than the merged ones, because
+read ids restart per plate (e.g. `1_27f-A01` exists on several plates) and the
+merged step keeps only the first of each collision. Each microbe is therefore
+keyed by `(plate, microbe_id)`. Columns: `plate, microbe_id,` then
+`{silva,ncbi,gtdb}_{id,pct_id,genus,species,lineage}`, plus an `ncbi_taxid`
+column (the NCBI accession mapped through `data/ref/ncbi_16S.acc2taxid.tsv`).
+
 ### Truncated GTDB master tree
 
 The GTDB **bac120 master tree** is pruned down to just the reference genomes the
@@ -369,4 +388,26 @@ page — for the merged set it collapses the 186 genomes to 69 genera:
 ```
 podman run --rm -e COLLAPSE=genus -v "$PWD":/work -w /work sanger16s \
   Rscript scripts/sanger/06_gtdb_tree.R
+```
+
+Add `TAX=silva` to label/collapse this same GTDB-pruned tree by the **SILVA**
+taxonomy instead (the tree stays the pruned GTDB master tree; genus/phylum come
+from the SILVA per-read assignments, written as `*.by_genus.silva.*`):
+
+```
+podman run --rm -e COLLAPSE=genus -e TAX=silva -v "$PWD":/work -w /work sanger16s \
+  Rscript scripts/sanger/06_gtdb_tree.R
+```
+
+The same genus tree + depth table can instead be drawn from the **de novo
+FastTree** of the isolate cluster representatives (`04_tree.sh`, i.e. topology
+from the isolates' own 16S sequences rather than the GTDB reference), using the
+**SILVA** taxonomy for the genus labels, with
+[scripts/sanger/07_fasttree_genus_tree.R](scripts/sanger/07_fasttree_genus_tree.R),
+saved under the separate name `merged.fasttree_genus_tree.*` (pass
+`merged.tax.gtdb.csv` as the first argument to use GTDB instead):
+
+```
+podman run --rm -v "$PWD":/work -w /work sanger16s \
+  Rscript scripts/sanger/07_fasttree_genus_tree.R
 ```
