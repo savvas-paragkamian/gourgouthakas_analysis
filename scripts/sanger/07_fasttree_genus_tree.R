@@ -62,6 +62,21 @@ tips <- tibble(label = tree$tip.label) %>%
 # representative tip = the genus member with the highest GTDB % identity
 reps <- tips %>% arrange(desc(pct_id)) %>% group_by(genus) %>%
   slice(1) %>% ungroup()
+
+# depth table (built by 08): keep only genera with at least one isolate in it
+# (0-filled where a genus is absent at a depth); drop the rest, no fabrication.
+depths <- c(0, -39, -220, -418, -678, -713, -900, -1050, -1100)
+if (!file.exists(depth_tsv))
+  stop("depth table not found: ", depth_tsv, " -- run 08_taxonomy_table.py first")
+depth_df <- read_tsv(depth_tsv, show_col_types = FALSE)
+dropped <- setdiff(reps$genus, depth_df$taxon)
+reps    <- reps %>% filter(genus %in% depth_df$taxon)
+if (length(dropped) > 0)
+  message("dropped ", length(dropped), " genera absent from ",
+          basename(depth_tsv), " (no depth metadata): ",
+          paste(head(dropped, 6), collapse = ", "),
+          if (length(dropped) > 6) ", ..." else "")
+
 message("genera on the FastTree: ", nrow(reps),
         " (from ", length(tree$tip.label), " representative tips)")
 if (nrow(reps) < 3) stop("Fewer than 3 genera; nothing to plot.")
@@ -73,33 +88,13 @@ tip_data <- tibble(label = pruned$tip.label) %>%
   left_join(genus_tot, by = "genus") %>%
   mutate(short_lab = genus, species = genus)
 
-# ---- 3. depth table (placeholder; one row per displayed genus) --------------
-# Non-destructive: keep existing rows (preserving real edits) and only append
-# random placeholder rows for genera not yet present (e.g. SILVA genera missing
-# from a GTDB-keyed table). Back up before changing.
-depths <- c(0, -39, -220, -418, -678, -713, -900, -1050, -1100)
-taxa   <- sort(unique(tip_data$short_lab))
-rand_rows <- function(names) {
-  set.seed(1)
-  m <- matrix(sample(0:50, length(names) * length(depths), replace = TRUE),
-              nrow = length(names), dimnames = list(NULL, as.character(depths)))
-  bind_cols(tibble(taxon = names), as_tibble(m))
-}
-if (!file.exists(depth_tsv)) {
-  dir.create(dirname(depth_tsv), recursive = TRUE, showWarnings = FALSE)
-  write_tsv(rand_rows(taxa), depth_tsv)
-  message("created placeholder depth table: ", depth_tsv)
-} else {
-  existing <- read_tsv(depth_tsv, show_col_types = FALSE)
-  missing  <- setdiff(taxa, existing$taxon)
-  if (length(missing) > 0) {
-    file.copy(depth_tsv, paste0(depth_tsv, ".bak"), overwrite = TRUE)
-    write_tsv(arrange(bind_rows(existing, rand_rows(missing)), taxon), depth_tsv)
-    message("added ", length(missing), " missing genera to ", depth_tsv,
-            " (backup -> ", basename(depth_tsv), ".bak)")
-  }
-}
-depth_df <- read_tsv(depth_tsv, show_col_types = FALSE)
+# Count only the supplied-table isolates: the "total" column and the tip size
+# are the depth-table row sum, so total == sum of the depth cells (inner join).
+tip_data <- tip_data %>% select(-n_isolates) %>%
+  left_join(depth_df %>%
+              transmute(genus = taxon,
+                        n_isolates = rowSums(across(all_of(as.character(depths))))),
+            by = "genus")
 
 # ---- 4. tree (left) + total + depth table on one A4 page -------------------
 fs_name <- 2.9; fs_cell <- 2.7; fs_hdr <- 3.4
