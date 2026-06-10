@@ -127,6 +127,106 @@ nice -n 19 parallel --jobs "$jobs" \
 	--timeout "$max_time" < ../logs/assemblies_unicycler_jobs.txt
 set -e
 
+# --------------------- Assembly statistics --------------------#
+# quast takes about a second per assembly
+
+conda activate quast
+
+while IFS= read -r dir_file; do
+
+	echo $dir_file
+
+	dir=$(echo $dir_file | awk '{print $1}')
+
+	echo "Processing assembly: $dir"
+	dir_path=$(echo $dir | awk -F"/" '{print $1 "/" $2}')
+	echo "Directory of assembly: $dir_path"
+
+	cd $dir_path
+
+	assembly=$(printf '%s' "$dir" | sed "s|$dir_path/||g")
+
+	echo "assembly: $assembly"
+
+	mkdir -p quast
+
+	# quast
+	echo "quast analysis of $dir"
+	python /opt/miniconda3/envs/quast/bin/quast \
+		$assembly \
+		-t 12 \
+		-o quast 
+
+	cd ../../
+
+	echo "Finish Processing directory: $dir_path"
+
+done < $assemblies
+
+
+	cd ../
+
+# ------------------------ Annotation ----------------------------#
+########################## With Bakta #############################
+
+conda activate bakta
+
+while IFS= read -r dir_file; do
+
+	echo $dir_file
+
+	dir=$(echo $dir_file | awk '{print $1}')
+
+	echo "Processing assembly: $dir"
+	dir_path=$(echo $dir | awk -F"/" '{print $1 "/" $2}')
+	echo "Directory of assembly: $dir_path"
+
+	cd $dir_path
+
+	assembly=$(printf '%s' "$dir" | sed "s|$dir_path/||g")
+
+	echo "assembly: $assembly"
+
+	# bakta
+	echo "bakta analysis of $dir"
+	bakta $assembly  \
+		--db /media/sarlab/DATA/databases/bakta_v6.0/db \
+		--threads 12 \
+		--output bakta \
+		--force
+
+	cd ../../
+
+	echo "Finish Processing directory: $dir_path"
+
+done < $assemblies
+
+
+# ------------------ de novo wf ----------------#
+# this run takes 10 hours
+
+conda activate gtdbtk-2.7.2
+
+gtdbtk de_novo_wf \
+	--extension fasta \
+	--batchfile batchfile.txt \
+	--out_dir gtdbtk_denovo \
+	--bacteria \
+	--outgroup_taxon p__Chloroflexota \
+	--cpus 16 
+
+# outgroup is hard to define https://github.com/Ecogenomics/GTDBTk/issues/390
+
+# ------------------ classify ----------------#
+# this run takes 1 hour
+
+gtdbtk classify_wf \
+	--batchfile batchfile.txt \
+	--out_dir gtdbtk_classify \
+	--cpus 16
+
+
+
 ################### end ##################
 	
 echo "Finished All Unicycler Assemblies"

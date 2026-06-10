@@ -238,3 +238,55 @@ awk 'FNR==1 && NR!=1 {next} {print}' SRL1060_functions.tsv SRL740_functions.tsv 
 ```
 
  The exported tables were analyzed in R (version 4.5.1) using the [pangenome_functions.R](scripts/pangenome_functions.R) script. This script was executed inside the "Streptomyces_functions" directory.
+
+## Taxonomic identification of isolates from Sanger 16S sequencing
+
+The microbial isolates were identified by Sanger sequencing of the 16S rRNA gene
+(27f primer). The raw `.ab1` trace files are organised under `data/` as one
+directory per sequencing plate, plus the `Villy-Katerina_90-1068815155_ab1`
+premixed set.
+
+These were processed with a reproduction of the [isolateR](https://github.com/bdaisley/isolateR)
+workflow (Daisley et al. 2024, *Bioinformatics* 40(7):btae448). Because the R
+package could not be installed, the workflow was rebuilt with command-line tools
+running inside a [podman](https://podman.io/) container, defined in
+[scripts/sanger/Containerfile](scripts/sanger/Containerfile). The container
+provides the bioconda toolchain (`vsearch`, `tracy`, `seqkit`, `blast`,
+`taxonkit`, `mafft`, `fasttree`, `biopython`). The defaults mirror isolateR:
+auto quality-trim cutoff (or fixed Phred 20 / window 15 / minimum length 200 bp),
+identity excluding terminal gaps (`vsearch --iddef 2`), taxonomic rank cutoffs
+(phylum 75 / class 78.5 / order 82 / family 86.5 / genus 96.5 / species 98.7 %),
+and strain-library dereplication at 99.5 % identity.
+
+| isolateR function | Step | Tool in this pipeline |
+|---|---|---|
+| `isoQC`  | quality-trim `.ab1` → FASTA + PASS/FAIL table | [01_isoqc.py](scripts/sanger/01_isoqc.py) (Biopython) and [01b_isoqc_tracy.sh](scripts/sanger/01b_isoqc_tracy.sh) (tracy), compared |
+| `isoTAX` | taxonomy by global alignment | [02_isotax.sh](scripts/sanger/02_isotax.sh) → `vsearch --usearch_global` vs **NCBI 16S** type strains and **SILVA** SSU NR99, lineages via `taxonkit` ([02_assign.py](scripts/sanger/02_assign.py)) |
+| `isoLIB` | strain library | [03_isolib.sh](scripts/sanger/03_isolib.sh) → `vsearch --cluster_size --id 0.995` |
+| (optional) | phylogeny of representatives | [04_tree.sh](scripts/sanger/04_tree.sh) → `mafft` + `FastTree` |
+
+Build the image and run the full pipeline from the repository root:
+
+```
+podman build -t sanger16s -f scripts/sanger/Containerfile .
+podman run --rm -v "$PWD":/work -w /work sanger16s bash scripts/sanger/run.sh
+```
+
+The reference databases are downloaded once into `data/ref/` by
+[scripts/sanger/setup_db.sh](scripts/sanger/setup_db.sh) (NCBI 16S RefSeq
+Targeted Loci, NCBI taxdump, SILVA SSU Ref NR99 release 138.2). The orchestrator
+[scripts/sanger/run.sh](scripts/sanger/run.sh) processes each plate as a separate
+batch and then builds a merged, cross-plate strain library. Results are written
+to `results/sanger/<batch>/`:
+
+```
+<batch>.qc.fasta / .qc.csv          isoQC trimmed reads + PASS/FAIL table
+<batch>.tracy.fasta / .compare.csv  tracy trimming + length comparison
+<batch>.tax.ncbi.csv                taxonomy vs NCBI 16S type strains
+<batch>.tax.silva.csv               taxonomy vs SILVA SSU NR99
+<batch>.reps.fasta / .lib.csv       strain library (99.5 % clusters)
+<batch>.reps.aln / .reps.nwk        alignment and phylogenetic tree
+```
+
+The behaviour can be tuned with the environment variables `QC_MODE` (`auto` or
+`window`), `THREADS`, `REF`, and `OUT`.
