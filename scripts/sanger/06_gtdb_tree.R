@@ -147,8 +147,10 @@ if (collapse == "genus") {
 # depth). Keep only figure taxa that have at least one isolate in it; drop the
 # rest (no depth metadata) rather than fabricating counts.
 depths    <- c(0, -39, -220, -418, -678, -713, -900, -1050, -1100)
+# per-taxonomy depth table (08 writes .gtdb.tsv and .silva.tsv); label with the
+# taxonomy this figure uses so genus counts match the tip labels.
 depth_tsv <- ifelse(length(args) >= 5, args[5],
-                    "results/gourgouthakas_depth_table.tsv")
+                    paste0("results/gourgouthakas_depth_table.", tax_mode, ".tsv"))
 if (!file.exists(depth_tsv))
   stop("depth table not found: ", depth_tsv, " -- run 08_taxonomy_table.py first")
 depth_df <- read_tsv(depth_tsv, show_col_types = FALSE)

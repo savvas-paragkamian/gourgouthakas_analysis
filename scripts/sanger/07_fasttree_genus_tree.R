@@ -33,8 +33,11 @@ tree_file <- ifelse(length(args) >= 2, args[2],
                     "results/sanger/merged/merged.reps.nwk")
 out_pref  <- ifelse(length(args) >= 3, args[3],
                     "results/sanger/merged/merged.fasttree_genus_tree")
+# match the per-taxonomy depth table (08 writes .gtdb.tsv / .silva.tsv) to the
+# taxonomy source so genus counts match the tip labels.
+tax_db    <- ifelse(grepl("silva", tax_csv), "silva", "gtdb")
 depth_tsv <- ifelse(length(args) >= 4, args[4],
-                    "results/gourgouthakas_depth_table.tsv")
+                    paste0("results/gourgouthakas_depth_table.", tax_db, ".tsv"))
 
 message("tax  : ", tax_csv, "  (taxonomy source)")
 message("tree : ", tree_file, "  (de novo FastTree)")

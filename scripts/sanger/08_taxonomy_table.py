@@ -15,11 +15,14 @@ data/gourgouthakas-cave-isolates.csv (tab-separated): only isolates present in
 that sheet are kept, each carrying its sampling metadata -- crucially the
 `depth` column.
 
-From that joined table the per-depth abundance matrix used by the tree figures
-(06_gtdb_tree.R / 07_fasttree_genus_tree.R) is written to
-results/gourgouthakas_depth_table.tsv: one row per taxon (GTDB and SILVA genus
-and species labels), one column per Gourgouthakas sampling depth, counting the
-isolates of that taxon found at that depth. The CSV `depth` holds the positive
+From that joined table the per-depth abundance matrices used by the tree figures
+(06_gtdb_tree.R / 07_fasttree_genus_tree.R) are written, one per taxonomy:
+results/gourgouthakas_depth_table.gtdb.tsv and .silva.tsv. Each has one row per
+taxon (that taxonomy's genus and species labels) and one column per Gourgouthakas
+sampling depth, counting the isolates of that taxon found at that depth. The
+tables are kept separate so a figure only ever sees its own taxonomy -- mixing
+them would, e.g., count the GTDB Aquipseudomonas isolates again under "Pseudomonas"
+(their SILVA genus) in the GTDB figure. The CSV `depth` holds the positive
 magnitude (m); the table columns are the signed depths (0, -39, ... -1100).
 
 Usage:
@@ -95,6 +98,12 @@ def depth_col(value):
     return MAG_TO_COL.get(mag)
 
 
+def depth_path(base, db):
+    """Per-taxonomy depth-table path: <base>.tsv -> <base>.<db>.tsv."""
+    root, ext = os.path.splitext(base)
+    return f"{root}.{db}{ext}"
+
+
 def write_depth_table(counts, path):
     """taxon x depth count matrix -> TSV (backing up any existing file)."""
     if not counts:
@@ -126,7 +135,8 @@ def main():
                     help="tab-separated isolate metadata keyed by `stab`")
     ap.add_argument("--depth-out",
                     default="results/gourgouthakas_depth_table.tsv",
-                    help="per-taxon per-depth abundance table for the figures")
+                    help="base path for the per-taxonomy depth tables; the "
+                         "suffix .<db>.tsv is inserted (.gtdb.tsv / .silva.tsv)")
     args = ap.parse_args()
 
     # NCBI accession -> taxid (the best_hit in *.tax.ncbi.csv is the accession)
@@ -159,8 +169,13 @@ def main():
                    f"{db}_lineage"]
     header += meta_cols
 
-    # taxon -> depth column -> isolate count
-    depth_counts = defaultdict(lambda: defaultdict(int))
+    # one depth table per taxonomy (db -> taxon -> depth column -> count).
+    # Keeping them separate avoids mixing labels: e.g. the GTDB split of the
+    # Pseudomonas complex (Aquipseudomonas, Stutzerimonas, ...) must not pick up
+    # the isolates SILVA still calls "Pseudomonas", which would double-count them
+    # against the GTDB genera in the GTDB figure.
+    depth_counts = {db: defaultdict(lambda: defaultdict(int))
+                    for db in DEPTH_LABEL_DBS}
     n_with_depth = 0
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
@@ -195,26 +210,25 @@ def main():
                 w.writerow(row)
                 n_rows += 1
 
-                # per-depth taxon counts (every retained isolate has metadata)
+                # per-depth taxon counts (every retained isolate has metadata),
+                # accumulated separately per taxonomy
                 col = depth_col(meta.get("depth", ""))
                 if col is not None:
                     n_with_depth += 1
-                    labels = set()
                     for db in DEPTH_LABEL_DBS:
                         h = tax[db].get(mid)
                         if not h:
                             continue
-                        for lab in (h["genus"], h["species"]):
+                        for lab in {h["genus"], h["species"]}:
                             if lab:
-                                labels.add(lab)
-                    for lab in labels:
-                        depth_counts[lab][col] += 1
+                                depth_counts[db][lab][col] += 1
 
     print(f"[taxonomy_table] {n_rows} metadata-matched microbes (inner join) "
           f"from {len(batches)} plates -> {args.out}; "
           f"{n_with_depth} with a usable depth")
 
-    write_depth_table(depth_counts, args.depth_out)
+    for db in DEPTH_LABEL_DBS:
+        write_depth_table(depth_counts[db], depth_path(args.depth_out, db))
 
 
 if __name__ == "__main__":
