@@ -1,0 +1,60 @@
+# Containerfile - CLI replica of the isolateR Sanger 16S workflow
+#
+#   isoQC  -> tracy / Biopython sliding-window quality trim of .ab1
+#   isoTAX -> vsearch --usearch_global vs NCBI 16S + SILVA, lineages via taxonkit
+#   isoLIB -> vsearch --cluster_size (99.5% id) strain library
+#   tree   -> mafft + FastTree
+#
+# Build:  podman build -t sanger16s -f scripts/sanger/Containerfile .
+# Run:    podman run --rm -v "$PWD":/work -w /work sanger16s \
+#               bash scripts/sanger/run.sh
+#
+FROM mambaorg/micromamba:1.5.10
+
+LABEL org.opencontainers.image.title="sanger16s" \
+      org.opencontainers.image.description="CLI replica of the isolateR Sanger 16S pipeline"
+
+# bioconda toolchain. Pin majors for reproducibility; let solver fix the rest.
+RUN micromamba install -y -n base -c conda-forge -c bioconda \
+        python=3.11 \
+        biopython \
+        vsearch \
+        tracy \
+        seqkit \
+        blast \
+        taxonkit \
+        mafft \
+        fasttree \
+        wget \
+        gzip \
+        tar \
+    && micromamba clean --all --yes
+
+# R toolchain for pruning/plotting the GTDB master tree (06_gtdb_tree.R).
+RUN micromamba install -y -n base -c conda-forge -c bioconda \
+        r-base \
+        r-tidyverse \
+        r-ape \
+        bioconductor-ggtree \
+        bioconductor-treeio \
+        r-tidytree \
+        bioconductor-ggtreeextra \
+    && micromamba clean --all --yes
+
+# Activate the base env for every RUN/CMD/entrypoint layer below and at runtime.
+ARG MAMBA_DOCKERFILE_ACTIVATE=1
+ENV PATH=/opt/conda/bin:$PATH
+
+# taxonkit looks here for the NCBI taxdump (names.dmp/nodes.dmp).
+ENV TAXONKIT_DB=/work/data/ref/taxdump
+
+WORKDIR /work
+
+# Default: print versions so `podman run sanger16s` is a smoke test.
+# Use a non-login shell: a login shell (-l) re-sources /etc/profile and drops
+# /opt/conda/bin from PATH.
+CMD ["bash","-c","vsearch --version 2>&1 | head -1; tracy --version; \
+        seqkit version; taxonkit version; mafft --version 2>&1 | head -1; \
+        FastTree 2>&1 | head -1; \
+        python -c 'import Bio; print(\"biopython\", Bio.__version__)'; \
+        Rscript -e 'cat(R.version.string,\"\\n\"); library(ggtree); cat(\"ggtree\", as.character(packageVersion(\"ggtree\")), \"\\n\")'"]
