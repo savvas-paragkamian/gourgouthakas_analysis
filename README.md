@@ -290,3 +290,83 @@ to `results/sanger/<batch>/`:
 
 The behaviour can be tuned with the environment variables `QC_MODE` (`auto` or
 `window`), `THREADS`, `REF`, and `OUT`.
+
+### Connecting SILVA and GTDB taxonomy
+
+To relate the SILVA assignments to the [GTDB](https://gtdb.ecogenomic.org/)
+taxonomy, the reads are additionally classified against the GTDB SSU
+representative database (`bac120_ssu_reps` + `ar53_ssu_reps`, latest release)
+using the same `vsearch --usearch_global` approach, and the two taxonomies are
+joined per read. This is a standalone step run after the main pipeline:
+
+```
+podman run --rm -v "$PWD":/work -w /work sanger16s bash scripts/sanger/05_silva_gtdb.sh
+```
+
+It is implemented in [scripts/sanger/05_silva_gtdb.sh](scripts/sanger/05_silva_gtdb.sh)
+(GTDB classification via [02_assign.py](scripts/sanger/02_assign.py), `--db gtdb`)
+and [scripts/sanger/05_join.py](scripts/sanger/05_join.py) (join + concordance).
+For every batch it writes to `results/sanger/<batch>/`:
+
+```
+<batch>.tax.gtdb.csv         GTDB taxonomy per read
+<batch>.silva_vs_gtdb.csv    SILVA and GTDB lineage side by side per read
+<batch>.concordance.csv      per-read genus/species agreement
+```
+plus a roll-up `results/sanger/silva_vs_gtdb.summary.csv`.
+
+Because GTDB appends polyphyly suffixes (e.g. `Bacillus_A`, `Brevibacillus_B`),
+the concordance compares genus names both strictly and "loosely" (suffix
+stripped), and compares the species epithet ignoring SILVA placeholders such as
+`sp.`/`uncultured`. Genuine GTDB reclassifications are surfaced this way — for
+the cave isolates the largest is the split of the *Pseudomonas* complex into
+*Aquipseudomonas*, *Stutzerimonas*, and *Neopusillimonas*.
+
+### Truncated GTDB master tree
+
+The GTDB **bac120 master tree** is pruned down to just the reference genomes the
+isolates were assigned to (their GTDB best hits), so the isolates can be placed
+in the context of the GTDB phylogeny. This follows the `keep.tip` / `ggtree`
+approach of [scripts/taxonomy_tree.R](scripts/taxonomy_tree.R) and runs in R
+inside the same container (which now also carries `r-tidyverse`, `r-ape`,
+`ggtree`, `treeio`, `tidytree`, `ggtreeExtra`):
+
+```
+podman run --rm -v "$PWD":/work -w /work sanger16s \
+  Rscript scripts/sanger/06_gtdb_tree.R [gtdb_tax.csv] [bac120.tree] [bac120_taxonomy.tsv] [out_prefix]
+```
+
+With no arguments it uses the merged GTDB results
+(`results/sanger/merged/merged.tax.gtdb.csv`) and the master tree + taxonomy
+downloaded into `data/ref/gtdb/` by [setup_db.sh](scripts/sanger/setup_db.sh).
+[scripts/sanger/06_gtdb_tree.R](scripts/sanger/06_gtdb_tree.R) reads the GTDB
+best-hit genome of each isolate, prunes the master tree with `keep.tip`, and
+lays the tree out compressed into the left third of an **A4 page** next to a
+`total` column (isolates per taxon) and a table of abundances across the
+**9 Gourgouthakas sampling depths**
+(0, -39, -220, -418, -678, -713, -900, -1050, -1100 m). Tip points are coloured
+by phylum and sized by the number of isolates. **Figures are written to
+`plots/`**; the pruned tree and tip table go next to the input:
+
+```
+plots/*.gtdb_master_tree[.by_genus].pdf / .png   A4 tree + depth-abundance table
+plots/*.gtdb_master_tree[.by_genus].circular.png circular tree, coloured by genus
+results/sanger/merged/*.nwk                       the pruned tree (Newick)
+results/sanger/merged/*.tips.csv                  tip table (genome, lineage, n_isolates)
+```
+
+The depth abundances are read from `results/gourgouthakas_depth_table.tsv`
+(taxon + 9 depth columns). If the file is absent it is created once with random
+placeholder counts — **replace these with the real abundances and re-run** to
+regenerate the figure. (This one file is kept under version control even though
+`results/` is otherwise git-ignored.)
+
+Set `COLLAPSE=genus` for the compact one-tip-per-genus view (a representative
+genome per GTDB genus, tip size = total isolates in the genus); outputs get a
+`.by_genus` suffix so both views coexist. This is the version that fits one A4
+page — for the merged set it collapses the 186 genomes to 69 genera:
+
+```
+podman run --rm -e COLLAPSE=genus -v "$PWD":/work -w /work sanger16s \
+  Rscript scripts/sanger/06_gtdb_tree.R
+```
