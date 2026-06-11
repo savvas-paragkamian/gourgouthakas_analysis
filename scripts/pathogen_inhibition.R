@@ -283,5 +283,5 @@ p <- ggplot(
   # -------------------------
 # Save
 # -------------------------
-ggsave("../plots/bubble_strong_isolates.png", p, width=6, height=8, dpi=600)
+ggsave("../plots/bubble_strong_isolates.png", p, width=6, height=10, dpi=600)
 
