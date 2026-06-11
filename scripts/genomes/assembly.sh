@@ -54,12 +54,11 @@ echo "Number of SRL microbes: $microbes"
 ######################### Automated Unicycler Assembly ######################
 cd $path
 
-# initiate conda in the script
-source /opt/miniconda3/etc/profile.d/conda.sh
-	
-# activate the environment of assembly
-conda activate autocycler
-#exit 0
+# Tools run from the gourgouthakas-genomes container (scripts/genomes/Containerfile),
+# one micromamba env per tool. `RUN` invokes a tool in its env; off-container,
+# override with RUN="conda run -n <env>" or RUN="" to use a host conda activate.
+#   podman run --rm -v "$PWD":/work -w /work gourgouthakas-genomes bash scripts/genomes/assembly.sh <dirs> <path>
+RUN=${RUN:-micromamba run -n}
 
 #----------------------------------------------------------------------#
 #----------------------- Quality Filtering ----------------------------#
@@ -74,7 +73,7 @@ while IFS= read -r dir_file; do
 
 	# fastp quality filtering of short reads
 	echo "fastp of $dir"
-	fastp --in1 1.Cleandata/$dir*1.fq.gz \
+	$RUN qc fastp --in1 1.Cleandata/$dir*1.fq.gz \
 		--in2 1.Cleandata/$dir*2.fq.gz \
 		--out1 reads_qc/$dir.QC_1.fq.gz \
 		--out2 reads_qc/$dir.QC_2.fq.gz \
@@ -84,7 +83,7 @@ while IFS= read -r dir_file; do
 
 	# fastplong for filtering the long reads
 	echo "fastplong of $dir"
-	fastplong \
+	$RUN qc fastplong \
 		-i 1.Cleandata/$dir.filtered_reads.fq.gz \
 		-o reads_qc/$dir.QC_long.fq.gz \
 		--length_required 1000 \
@@ -109,8 +108,8 @@ rm -f ../logs/assemblies_unicycler_jobs.txt
 while IFS= read -r dir_file; do
 
 	dir=$(printf "%s" "$dir_file" | sed 's:[/[:space:]]*$::')
-	# Unicycler for short-reads only:
-	echo "unicycler -1 $dir/reads_qc/$dir.QC_1.fq.gz -2 $dir/reads_qc/$dir.QC_2.fq.gz -l $dir/reads_qc/$dir.QC_long.fq.gz -o $dir/unicycler_assembly -t 8" >> ../logs/assemblies_unicycler_jobs.txt
+	# Unicycler hybrid assembly (short + long reads), run in its own env:
+	echo "$RUN unicycler unicycler -1 $dir/reads_qc/$dir.QC_1.fq.gz -2 $dir/reads_qc/$dir.QC_2.fq.gz -l $dir/reads_qc/$dir.QC_long.fq.gz -o $dir/unicycler_assembly -t 8" >> ../logs/assemblies_unicycler_jobs.txt
 
 done < $dirs
 
@@ -129,8 +128,6 @@ set -e
 
 # --------------------- Assembly statistics --------------------#
 # quast takes about a second per assembly
-
-conda activate quast
 
 while IFS= read -r dir_file; do
 
@@ -152,10 +149,10 @@ while IFS= read -r dir_file; do
 
 	# quast
 	echo "quast analysis of $dir"
-	python /opt/miniconda3/envs/quast/bin/quast \
+	$RUN quast quast \
 		$assembly \
 		-t 12 \
-		-o quast 
+		-o quast
 
 	cd ../../
 
@@ -168,6 +165,10 @@ done < $assemblies
 
 # ------------------------ Annotation ----------------------------#
 ########################## With Bakta #############################
+# NOTE: bakta and gtdb-tk below are NOT in the gourgouthakas-genomes image
+# (out of scope: they need 100+ GB reference DBs). These sections still run on
+# the lab server via host conda + /media/sarlab DBs. Containerize later by
+# adding `bakta`/`gtdbtk` micromamba envs + a scripts/genomes/setup_db.sh.
 
 conda activate bakta
 
