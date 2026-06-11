@@ -3,6 +3,31 @@
 Here we analyse the data from the biobank of microbial isolates from 
 the Gourgouthakas cave. 
 
+## Genome assembly + QC
+
+The cave *Streptomyces* genomes (`SRL*`) are assembled from short + long reads by
+[`scripts/genomes/assembly.sh`](scripts/genomes/assembly.sh): `fastp`/`fastplong`
+quality filtering, `unicycler` hybrid assembly run in parallel with GNU
+`parallel`, and `quast` statistics. (The `bakta` annotation and `gtdb-tk`
+taxonomy steps further down that script still run on the lab server.)
+
+These tools are containerized in
+[`scripts/genomes/Containerfile`](scripts/genomes/Containerfile) (one image, one
+micromamba env per tool, since their pinned dependencies do not co-solve):
+
+```
+podman build -t gourgouthakas-genomes -f scripts/genomes/Containerfile .
+# version smoke test:
+podman run --rm gourgouthakas-genomes
+# run the assembly + QC stage (mount the repo; tools are picked per env):
+podman run --rm -v "$PWD":/work -w /work gourgouthakas-genomes \
+    bash scripts/genomes/assembly.sh <dirs_file> <path>
+```
+
+Each tool is invoked as `micromamba run -n <env> <cmd>` (envs: `qc`,
+`unicycler`, `autocycler`, `quast`); `assembly.sh` uses
+`RUN=${RUN:-micromamba run -n}` so the prefix can be overridden off-container.
+
 ## Pangenome analysis with anvi'o
 
 ### 1) Pangenome analysis with publicly available genomes of *Streptomyces*
