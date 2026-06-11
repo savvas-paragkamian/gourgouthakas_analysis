@@ -27,8 +27,16 @@ lapply(packages, library, character.only = TRUE)
 # 2. Read data
 # -------------------------
 file_path <- "../data/in_vitro_phytopathogens_inhibition.txt"
+file_taxonomy <- read_delim("../results/taxonomy_per_microbe.tsv", delim="\t") 
 
 df <- read.delim(file_path, sep = "\t", check.names = FALSE, stringsAsFactors = FALSE)
+df$stab <- as.numeric(gsub("SRL","",df$Species))
+
+df <- df |>
+  left_join(file_taxonomy) |>
+  mutate(gtdb_genus=if_else(is.na(gtdb_genus),Genus,gtdb_genus)) |>
+  filter( is.na(silva_pct_id) | silva_pct_id>95)
+
 
 # -------------------------
 # 3. Define pathogen columns
@@ -65,7 +73,7 @@ pathogen_labels <- c(
   "Phytophthora nicotianae_class"            = "P. nicotianae"
 )
 
-# -------------------------
+ -------------------------
 # 6. Long format for plotting
 # -------------------------
 df_long <- df_clean %>%
@@ -142,7 +150,7 @@ heatmap_plot <- ggplot(df_long, aes(x = Pathogen, y = Species, fill = Inhibition
 #     Mean inhibition by genus across all tested pathogen-isolate values
 # -------------------------
 genus_summary <- df_long %>%
-  group_by(Genus) %>%
+  group_by(gtdb_genus) %>%
   summarise(
     n = sum(!is.na(Inhibition)),
     mean_inhibition = mean(Inhibition, na.rm = TRUE),
@@ -151,13 +159,13 @@ genus_summary <- df_long %>%
     .groups = "drop"
   ) %>%
   arrange(desc(mean_inhibition)) %>%
-  mutate(Genus = fct_reorder(Genus, mean_inhibition))
+  mutate(gtdb_genus = fct_reorder(gtdb_genus, mean_inhibition))
 
 # -------------------------
 # 11. Bar plot with error bars
 #     Uses standard error; change to sd_inhibition if preferred
 # -------------------------
-bar_plot <- ggplot(genus_summary, aes(x = Genus, y = mean_inhibition)) +
+bar_plot <- ggplot(genus_summary, aes(x = gtdb_genus, y = mean_inhibition)) +
   geom_col(width = 0.72, fill = "grey30") +
   geom_errorbar(
     aes(
@@ -203,7 +211,7 @@ ggsave(
 
 
 genus_summary <- df_long %>%
-  group_by(Genus, Pathogen) %>%
+  group_by(gtdb_genus, Pathogen) %>%
   summarise(
     mean_inhibition = mean(Inhibition, na.rm = TRUE),
     strong_isolates = sum(Inhibition > 0.5, na.rm = TRUE),
@@ -223,7 +231,7 @@ genus_summary$Pathogen <- recode(
 
 # Order genera
 genus_summary <- genus_summary %>%
-  mutate(Genus = fct_reorder(Genus, mean_inhibition, .fun = mean))
+  mutate(Genus = fct_reorder(gtdb_genus, mean_inhibition, .fun = mean))
 
 # Convert to factor for discrete colors
 genus_summary$strong_isolates <- factor(genus_summary$strong_isolates)
@@ -234,6 +242,7 @@ cb_palette <- c(
 "#009E73",
 "#E69F00",
 "#D55E00",
+"gray60",
 "#CC79A7",
 "#0072B2"
 )
@@ -254,8 +263,8 @@ p <- ggplot(
   scale_size(range = c(3,14), name="Mean inhibition") +
   scale_fill_manual(values = cb_palette, name="Isolates >0.5") +
   labs(
-    title = "Antagonistic activity of bacterial genera",
-    subtitle = "Bubble size = mean inhibition,\ncolor = number of strong inhibitory isolates (>0.5)",
+#    title = "Antagonistic activity of bacterial genera",
+#    subtitle = "Bubble size = mean inhibition,\ncolor = number of strong inhibitory isolates (>0.5)",
     x = "Phytopathogen",
     y = "Bacterial genus"
   ) +
