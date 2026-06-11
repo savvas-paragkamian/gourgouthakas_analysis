@@ -67,6 +67,45 @@ mode_chr <- function(x) {                 # most frequent non-empty value, or NA
   if (length(x) == 0) NA_character_ else names(which.max(table(x)))
 }
 
+tree <- ape::read.tree(tree_file)
+
+# Graft whole-genome (gtdb-tk) isolates onto the same pipeline: each WGS isolate
+# (results/genomes/wgs_gtdb.tsv, written by 08) becomes a synthetic "hit" on its
+# GTDB best-hit genome, so the existing prune/collapse/depth-join code handles it
+# unchanged. WGS taxonomy is GTDB, so only graft for TAX=gtdb. The ANI reference
+# genome may not be a tip of the bac120 master tree (it carries fewer genomes
+# than GTDB has); when it is absent, fall back to any tree tip of the same GTDB
+# genus so the isolate still places (genus-collapse then shows it under its genus).
+wgs_file <- "results/genomes/wgs_gtdb.tsv"
+if (tax_mode == "gtdb" && file.exists(wgs_file)) {
+  wgs <- read_tsv(wgs_file, show_col_types = FALSE)
+  genus_tip <- read_tsv(gtdb_tax, col_names = c("genome_id", "taxonomy"),
+                        show_col_types = FALSE) %>%
+    filter(genome_id %in% tree$tip.label) %>%
+    mutate(genus = str_remove(str_extract(taxonomy, "g__[^;]+"), "g__")) %>%
+    filter(!is.na(genus), genus != "") %>%
+    arrange(genome_id) %>% group_by(genus) %>% slice(1) %>% ungroup() %>%
+    transmute(genus, rep_tip = genome_id)
+
+  wgs <- wgs %>%
+    left_join(genus_tip, by = "genus") %>%
+    mutate(resolved = if_else(genome_id %in% tree$tip.label,
+                              genome_id, rep_tip))
+  for (i in which(!is.na(wgs$resolved)))
+    message("grafted WGS isolate ", wgs$stab[i], " (", wgs$genus[i], ") onto ",
+            wgs$resolved[i],
+            if (!identical(wgs$resolved[i], wgs$genome_id[i]))
+              paste0(" [genus-rep; ", wgs$genome_id[i], " absent from tree]")
+            else "")
+  if (any(is.na(wgs$resolved)))
+    message("WGS isolates with no tree tip for their genus (dropped): ",
+            paste(wgs$stab[is.na(wgs$resolved)], collapse = ", "))
+  hits <- bind_rows(hits, wgs %>% filter(!is.na(resolved)) %>%
+                            transmute(query = as.character(stab),
+                                      best_hit = resolved, pct_id = pct_id,
+                                      genus = genus))
+}
+
 per_genome <- hits %>%
   group_by(genome_id = best_hit) %>%
   summarise(n_isolates = n(),
@@ -77,7 +116,6 @@ per_genome <- hits %>%
 message("distinct best-hit genomes: ", nrow(per_genome))
 
 # ---- 2. keep only genomes present in the master tree, attach GTDB lineage ---
-tree <- ape::read.tree(tree_file)
 per_genome <- per_genome %>% filter(genome_id %in% tree$tip.label)
 message("genomes present in master tree: ", nrow(per_genome))
 

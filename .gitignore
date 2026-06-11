@@ -6,6 +6,14 @@ data/ref/
 results/*
 !results/gourgouthakas_depth_table.*.tsv
 
+# whole-genome (gtdb-tk) taxonomy: keep the WGS ANI summaries (read by 08) and
+# the parsed per-isolate call table wgs_gtdb.tsv (read by 06) so the GTDB figure
+# stays regenerable, mirroring the tracked depth tables above.
+!results/genomes/
+results/genomes/*
+!results/genomes/gtdbtk.ani_summary*.tsv
+!results/genomes/wgs_gtdb.tsv
+
 # raw ABI trace folders (large binary Sanger data)
 data/*_ABI/
 data/*_ab1/

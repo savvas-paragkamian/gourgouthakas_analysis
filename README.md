@@ -387,6 +387,23 @@ its own labels — otherwise the GTDB Pseudomonas-complex genera
 *Pseudomonas* (their SILVA genus) in the GTDB figure, inflating and duplicating
 them. **Run `08` before `06`/`07`.**
 
+#### Whole-genome (gtdb-tk) taxonomy
+
+For isolates that were also whole-genome sequenced and classified with
+[GTDB-Tk](https://github.com/Ecogenomics/GTDBTk), the genome-based assignment is
+more reliable than the single 16S gene, so it takes precedence in the **GTDB**
+outputs (the SILVA table is left untouched, since the WGS call is GTDB). The
+GTDB-Tk ANI summaries are placed under `results/genomes/`
+(`gtdbtk.ani_summary*.tsv`, one per assembly; the `user_genome` column is
+`<stab>.unicycler_hybrid_assembly`). `08_taxonomy_table.py` takes the best
+(highest `skani_ani`) reference hit of each assembly and, keyed by `stab`,
+**overrides** that isolate's Sanger GTDB genus/species/lineage where the two
+differ, and **inserts** any WGS-only isolate (one never recovered by Sanger 16S)
+into both `taxonomy_per_microbe.tsv` (plate `WGS`) and the GTDB depth table. It
+also writes `results/genomes/wgs_gtdb.tsv` (the per-isolate WGS GTDB call, with
+the reference accession normalised to the GTDB master-tree prefix) for the tree
+figure to consume.
+
 ### Truncated GTDB master tree
 
 The GTDB **bac120 master tree** is pruned down to just the reference genomes the
@@ -430,6 +447,14 @@ read the table (they never write it): they keep only the taxa present in it
 tip size to its depth-row sum, so the `total` equals the sum of the depth cells.
 If the table is absent the scripts stop and tell you to run `08`. These files
 are kept under version control even though `results/` is otherwise git-ignored.
+
+When a whole-genome (GTDB-Tk) call is available (`results/genomes/wgs_gtdb.tsv`,
+written by `08`), `06` **grafts** that isolate onto the pruned tree as a
+synthetic hit on its GTDB best-hit genome (GTDB labelling only). Because the
+bac120 master tree carries fewer genomes than GTDB as a whole, the exact ANI
+reference is sometimes not a tip; `06` then falls back to a tree tip of the same
+GTDB genus, so the isolate still appears under its genus (e.g. the cave
+*Nocardiopsis* isolate, whose reference genome is absent from the tree).
 
 Set `COLLAPSE=genus` for the compact one-tip-per-genus view (a representative
 genome per GTDB genus, tip size = total isolates in the genus); outputs get a

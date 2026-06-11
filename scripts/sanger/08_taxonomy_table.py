@@ -74,6 +74,66 @@ def stab_of(microbe_id):
     return m.group(1) if m else None
 
 
+def norm_gtdb_acc(acc):
+    """Bare NCBI accession -> GTDB tree/taxonomy prefix (RS_GCF_/GB_GCA_)."""
+    acc = acc.strip()
+    if acc.startswith(("RS_", "GB_")):
+        return acc
+    if acc.startswith("GCF_"):
+        return "RS_" + acc
+    if acc.startswith("GCA_"):
+        return "GB_" + acc
+    return acc
+
+
+def read_wgs_gtdb(genomes_dir):
+    """Parse gtdb-tk ANI summaries of whole-genome assemblies.
+
+    Reads every results/genomes/gtdbtk.ani_summary*.tsv, takes the best
+    (highest skani_ani) reference hit per assembly, and returns a dict keyed by
+    the isolate `stab` (leading number of `user_genome`). Each value has the
+    same shape as read_tax() (id/pct/genus/species/lineage) plus `phylum` and
+    `user_genome`, so it can directly override a Sanger GTDB assignment. The
+    GTDB lineage of the reference (column `reference_taxonomy`) supplies the
+    taxonomy; the reference accession is normalised to the GTDB master-tree
+    prefix (GCF_ -> RS_GCF_, GCA_ -> GB_GCA_).
+    """
+    best = {}   # stab -> (ani, value-dict)
+    for path in sorted(glob.glob(os.path.join(genomes_dir,
+                                              "gtdbtk.ani_summary*.tsv"))):
+        with open(path) as fh:
+            for row in csv.DictReader(fh, delimiter="\t"):
+                stab = stab_of(row.get("user_genome", ""))
+                if not stab:
+                    continue
+                try:
+                    ani = float(row.get("skani_ani", ""))
+                except (TypeError, ValueError):
+                    continue
+                if stab in best and ani <= best[stab][0]:
+                    continue
+                tx = row.get("reference_taxonomy", "")
+                rk = {r: "" for r in RANKS}
+                for tok in tx.split(";"):
+                    tok = tok.strip()
+                    for r, pre in (("phylum", "p__"), ("class", "c__"),
+                                   ("order", "o__"), ("family", "f__"),
+                                   ("genus", "g__"), ("species", "s__")):
+                        if tok.startswith(pre):
+                            rk[r] = tok[len(pre):]
+                lineage = ";".join(rk[r] for r in RANKS if rk[r])
+                best[stab] = (ani, {
+                    "id": norm_gtdb_acc(row.get("reference_genome", "")),
+                    "pct": f"{ani:g}",
+                    "genus": rk["genus"],
+                    "species": rk["species"],
+                    "lineage": lineage,
+                    "phylum": rk["phylum"],
+                    "user_genome": row.get("user_genome", ""),
+                })
+    return {stab: v for stab, (ani, v) in best.items()}
+
+
 def read_isolates(path):
     """stab -> metadata dict; plus the ordered list of metadata columns."""
     if not os.path.isfile(path):
@@ -137,6 +197,9 @@ def main():
                     default="results/gourgouthakas_depth_table.tsv",
                     help="base path for the per-taxonomy depth tables; the "
                          "suffix .<db>.tsv is inserted (.gtdb.tsv / .silva.tsv)")
+    ap.add_argument("--genomes-dir", default="results/genomes",
+                    help="gtdb-tk WGS ANI summaries; their GTDB call overrides "
+                         "the Sanger GTDB taxonomy of the same isolate")
     args = ap.parse_args()
 
     # NCBI accession -> taxid (the best_hit in *.tax.ncbi.csv is the accession)
@@ -155,6 +218,15 @@ def main():
     else:
         print(f"[taxonomy_table] no metadata loaded from {args.isolates}; "
               f"depth table will be empty")
+
+    # Whole-genome (gtdb-tk) GTDB calls; these override the Sanger GTDB taxonomy
+    # of the same isolate (WGS wins on conflict) and are inserted for isolates
+    # that were never Sanger-sequenced. WGS is GTDB-only -> SILVA is untouched.
+    wgs = read_wgs_gtdb(args.genomes_dir)
+    if wgs:
+        print(f"[taxonomy_table] {len(wgs)} WGS gtdb-tk calls from "
+              f"{args.genomes_dir} (override Sanger GTDB): "
+              f"{', '.join(sorted(wgs))}")
 
     batches = sorted(
         d for d in glob.glob(os.path.join(args.results_dir, "*"))
@@ -177,6 +249,7 @@ def main():
     depth_counts = {db: defaultdict(lambda: defaultdict(int))
                     for db in DEPTH_LABEL_DBS}
     n_with_depth = 0
+    wgs_seen = set()   # WGS stabs met among Sanger isolates (already overridden)
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     n_rows = 0
@@ -195,6 +268,9 @@ def main():
                 meta = isolates.get(stab) if stab else None
                 if meta is None:
                     continue   # inner join: only isolates in the metadata sheet
+                if stab in wgs:        # WGS gtdb-tk call wins over Sanger GTDB
+                    tax["gtdb"][mid] = wgs[stab]
+                    wgs_seen.add(stab)
                 row = [plate, mid, stab or ""]
                 for db in DBS:
                     h = tax[db].get(mid)
@@ -223,12 +299,55 @@ def main():
                             if lab:
                                 depth_counts[db][lab][col] += 1
 
+        # WGS-only isolates: present in the metadata sheet and gtdb-tk'd but
+        # never Sanger-sequenced. Emit a row (GTDB columns from WGS; SILVA/NCBI
+        # blank) and add to the GTDB depth counts at the isolate's depth.
+        n_wgs_only = 0
+        for stab in sorted(wgs):
+            if stab in wgs_seen:
+                continue
+            meta = isolates.get(stab)
+            if meta is None:
+                continue   # inner join: only isolates in the metadata sheet
+            h = wgs[stab]
+            row = ["WGS", h["user_genome"], stab]
+            row += [""] * 5                 # silva block
+            row += [""] * 6                 # ncbi block (id + taxid + 4)
+            row += [h["id"], h["pct"], h["genus"], h["species"], h["lineage"]]
+            row += [meta.get(c, "") for c in meta_cols]
+            w.writerow(row)
+            n_rows += 1
+            n_wgs_only += 1
+            col = depth_col(meta.get("depth", ""))
+            if col is not None:
+                n_with_depth += 1
+                for lab in {h["genus"], h["species"]}:
+                    if lab:
+                        depth_counts["gtdb"][lab][col] += 1
+        if n_wgs_only:
+            print(f"[taxonomy_table] inserted {n_wgs_only} WGS-only isolates "
+                  f"(no Sanger 16S) into the GTDB taxonomy/depth table")
+
     print(f"[taxonomy_table] {n_rows} metadata-matched microbes (inner join) "
           f"from {len(batches)} plates -> {args.out}; "
           f"{n_with_depth} with a usable depth")
 
     for db in DEPTH_LABEL_DBS:
         write_depth_table(depth_counts[db], depth_path(args.depth_out, db))
+
+    # WGS GTDB calls for the tree figure (06_gtdb_tree.R grafts these onto the
+    # pruned bac120 tree; it resolves genome_id to a tree tip itself).
+    if wgs:
+        wgs_path = os.path.join(args.genomes_dir, "wgs_gtdb.tsv")
+        with open(wgs_path, "w", newline="") as fo:
+            w = csv.writer(fo, delimiter="\t")
+            w.writerow(["stab", "genome_id", "genus", "species", "phylum",
+                        "lineage", "pct_id"])
+            for stab in sorted(wgs, key=int):
+                h = wgs[stab]
+                w.writerow([stab, h["id"], h["genus"], h["species"],
+                            h["phylum"], h["lineage"], h["pct"]])
+        print(f"[taxonomy_table] {len(wgs)} WGS GTDB calls -> {wgs_path}")
 
 
 if __name__ == "__main__":
