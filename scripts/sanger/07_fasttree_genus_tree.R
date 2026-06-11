@@ -101,8 +101,10 @@ tip_data <- tip_data %>% select(-n_isolates) %>%
 
 # ---- 4. tree (left) + total + depth table on one A4 page -------------------
 fs_name <- 2.9; fs_cell <- 2.7; fs_hdr <- 3.4
-cb_palette <- c("#E69F00", "#56B4E9", "#009E73", "#0072B2",
-                "#D55E00", "#CC79A7", "#000000", "#999999")
+# Okabe-Ito palette ordered for maximum divergence between the few phyla shown,
+# excluding the blue (#0072B2) used by the abundance heatmap below.
+cb_palette <- c("#D55E00", "#009E73", "#E69F00", "#CC79A7",
+                "#56B4E9", "#000000", "#999999")
 
 p <- ggtree(pruned) %<+% tip_data +
   geom_tippoint(aes(color = phylum, size = n_isolates))
@@ -123,8 +125,10 @@ long <- depth_df %>%
   mutate(depth = factor(depth, levels = as.character(depths)),
          xcell = x0 + (as.integer(depth) - 1) * dx) %>%
   inner_join(dd %>% select(short_lab, y), by = c("taxon" = "short_lab"))
+# white->blue gradient is light at low values, dark at high -> white text only
+# on the dark (high-abundance) cells, black on the light ones.
 long <- long %>%
-  mutate(txtcol = if_else(value < 0.45 * max(value, na.rm = TRUE),
+  mutate(txtcol = if_else(value > 0.55 * max(value, na.rm = TRUE),
                           "white", "black"))
 hdr <- tibble(depth = as.character(depths),
               xcell = x0 + (seq_along(depths) - 1) * dx)
@@ -132,7 +136,8 @@ x_right <- max(hdr$xcell) + dx
 
 p_tab <- p +
   geom_text(data = dd, aes(x = x_name, y = y, label = short_lab, color = phylum),
-            hjust = 0, size = fs_name, inherit.aes = FALSE) +
+            hjust = 0, size = fs_name, fontface = "italic", family = "Ubuntu",
+            inherit.aes = FALSE) +
   geom_tile(data = tot, aes(x = xcell, y = y), fill = "grey92",
             width = dx * 0.92, height = 0.9, color = "grey80",
             linewidth = 0.1, inherit.aes = FALSE) +
@@ -150,7 +155,7 @@ p_tab <- p +
            fontface = "bold", size = fs_hdr) +
   annotate("text", x = x_tot, y = hdr_y, label = "total", angle = 90,
            hjust = 0, fontface = "bold", size = fs_hdr) +
-  scale_fill_viridis_c(name = "abundance") +
+  scale_fill_gradient(low = "white", high = "#0072B2", name = "abundance") +
   scale_color_manual(values = cb_palette, name = "phylum", na.value = "grey50") +
   scale_size_continuous(range = c(1, 5), name = "isolates") +
   coord_cartesian(xlim = c(0, x_right), ylim = c(0.5, n + 6), clip = "off") +
@@ -173,7 +178,7 @@ p_tab <- p +
 # ---- 5. write figures to plots/, data next to the input --------------------
 dir.create("plots", showWarnings = FALSE)
 fig_pref <- file.path("plots", basename(out_pref))
-ggsave(paste0(fig_pref, ".pdf"), p_tab, device = "pdf",
+ggsave(paste0(fig_pref, ".pdf"), p_tab, device = cairo_pdf,
        width = 21, height = 29.7, units = "cm", limitsize = FALSE)
 ggsave(paste0(fig_pref, ".png"), p_tab, device = "png", dpi = 300,
        width = 21, height = 29.7, units = "cm", limitsize = FALSE)
@@ -181,7 +186,8 @@ ggsave(paste0(fig_pref, ".png"), p_tab, device = "png", dpi = 300,
 p_circ <- ggtree(pruned, layout = "circular") %<+% tip_data +
   geom_tippoint(aes(color = genus, size = n_isolates)) +
   geom_tiplab(aes(label = short_lab), size = 2.2, align = TRUE,
-              linesize = 0.1, offset = 0.02) +
+              linesize = 0.1, offset = 0.02, fontface = "italic",
+              family = "Ubuntu") +
   scale_color_viridis_d(name = "genus") +
   scale_size_continuous(range = c(1, 6)) +
   theme(legend.position = "right", plot.margin = margin(2, 2, 2, 2, "cm"))

@@ -184,10 +184,11 @@ tip_data <- tibble(label = pruned$tip.label) %>%
 # ---- 5. tree (left, compressed) + table (right) on one A4 page -------------
 fs_name <- 2.9; fs_cell <- 2.7; fs_hdr <- 3.4   # enlarged fonts for A4
 
-# Okabe-Ito colour-blind-safe palette for the discrete phylum colours
-# (light yellow dropped so coloured tip labels stay legible on white).
-cb_palette <- c("#E69F00", "#56B4E9", "#009E73", "#0072B2",
-                "#D55E00", "#CC79A7", "#000000", "#999999")
+# Okabe-Ito colour-blind-safe palette for the discrete phylum colours, ordered
+# for maximum divergence between the few phyla shown (no two blues adjacent) and
+# excluding the blue (#0072B2) used by the abundance heatmap below.
+cb_palette <- c("#D55E00", "#009E73", "#E69F00", "#CC79A7",
+                "#56B4E9", "#000000", "#999999")
 
 p <- ggtree(pruned) %<+% tip_data +
   geom_tippoint(aes(color = phylum, size = n_isolates))
@@ -210,9 +211,10 @@ long <- depth_df %>%
   mutate(depth = factor(depth, levels = as.character(depths)),
          xcell = x0 + (as.integer(depth) - 1) * dx) %>%
   inner_join(dd %>% select(short_lab, y), by = c("taxon" = "short_lab"))
-# viridis is dark at low values, bright at high -> white text on the dark cells
+# white->blue gradient is light at low values, dark at high -> white text only
+# on the dark (high-abundance) cells, black on the light ones.
 long <- long %>%
-  mutate(txtcol = if_else(value < 0.45 * max(value, na.rm = TRUE),
+  mutate(txtcol = if_else(value > 0.55 * max(value, na.rm = TRUE),
                           "white", "black"))
 hdr <- tibble(depth = as.character(depths),
               xcell = x0 + (seq_along(depths) - 1) * dx)
@@ -220,7 +222,8 @@ x_right <- max(hdr$xcell) + dx
 
 p_tab <- p +
   geom_text(data = dd, aes(x = x_name, y = y, label = short_lab, color = phylum),
-            hjust = 0, size = fs_name, inherit.aes = FALSE) +
+            hjust = 0, size = fs_name, fontface = "italic", family = "Ubuntu",
+            inherit.aes = FALSE) +
   # total isolates per taxon (neutral fill to set it apart from the heatmap)
   geom_tile(data = tot, aes(x = xcell, y = y), fill = "grey92",
             width = dx * 0.92, height = 0.9, color = "grey80",
@@ -241,7 +244,7 @@ p_tab <- p +
            fontface = "bold", size = fs_hdr) +
   annotate("text", x = x_tot, y = hdr_y, label = "total", angle = 90,
            hjust = 0, fontface = "bold", size = fs_hdr) +
-  scale_fill_viridis_c(name = "abundance") +
+  scale_fill_gradient(low = "white", high = "#0072B2", name = "abundance") +
   scale_color_manual(values = cb_palette, name = "phylum",
                      na.value = "grey50") +
   scale_size_continuous(range = c(1, 5), name = "isolates") +
@@ -267,16 +270,21 @@ p_tab <- p +
 dir.create("plots", showWarnings = FALSE)
 fig_pref <- file.path("plots", basename(out_pref))
 
-ggsave(paste0(fig_pref, ".pdf"), p_tab, device = "pdf",
+ggsave(paste0(fig_pref, ".pdf"), p_tab, device = cairo_pdf,
        width = 21, height = 29.7, units = "cm", limitsize = FALSE)
 ggsave(paste0(fig_pref, ".png"), p_tab, device = "png", dpi = 300,
+       width = 21, height = 29.7, units = "cm", limitsize = FALSE)
+# publication-quality 600 dpi TIFF (LZW-compressed) of the A4 tree + table
+ggsave(paste0(fig_pref, ".tiff"), p_tab, device = "tiff", type = "cairo",
+       dpi = 600, compression = "lzw",
        width = 21, height = 29.7, units = "cm", limitsize = FALSE)
 
 # circular tree (no table), also to plots/
 p_circ <- ggtree(pruned, layout = "circular") %<+% tip_data +
   geom_tippoint(aes(color = genus, size = n_isolates)) +
   geom_tiplab(aes(label = short_lab), size = 2.2, align = TRUE,
-              linesize = 0.1, offset = 0.02) +
+              linesize = 0.1, offset = 0.02, fontface = "italic",
+              family = "Ubuntu") +
   scale_color_viridis_d(name = "genus") +
   scale_size_continuous(range = c(1, 6)) +
   theme(legend.position = "right",
@@ -287,5 +295,5 @@ ggsave(paste0(fig_pref, ".circular.png"), p_circ, device = "png", dpi = 300,
 write.tree(pruned, file = paste0(out_pref, ".nwk"))
 write_csv(tip_data, paste0(out_pref, ".tips.csv"))
 
-message("done: figures -> ", fig_pref, ".{pdf,png,circular.png}")
+message("done: figures -> ", fig_pref, ".{pdf,png,tiff,circular.png}")
 message("      data    -> ", out_pref, ".{nwk,tips.csv};  table -> ", depth_tsv)
