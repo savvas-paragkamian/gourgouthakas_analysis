@@ -1,0 +1,74 @@
+# Containerfile - genome assembly + QC stage of the Gourgouthakas isolates
+#
+#   QC         -> fastp (short reads) + fastplong (long reads)
+#   assembly   -> unicycler (hybrid) and autocycler (long-read consensus)
+#   stats      -> quast
+#
+# Reproduces the assembly + QC half of scripts/genomes/assembly.sh. Annotation
+# (bakta) and taxonomy (gtdb-tk) are NOT included here: they need 100+ GB of
+# reference data and still run on the lab server. The R pangenome plots are
+# covered by the sanger16s image (r-tidyverse + r-upsetr).
+#
+# Each tool lives in its own micromamba env because their pinned dependencies
+# (unicycler's SPAdes/BLAST stack, quast's matplotlib, autocycler's assemblers)
+# do not co-solve - the same reason the host used separate conda envs. Invoke a
+# tool with `micromamba run -n <env> <cmd>`.
+#
+# Build:  podman build -t gourgouthakas-genomes -f scripts/genomes/Containerfile .
+# Run:    podman run --rm -v "$PWD":/work -w /work gourgouthakas-genomes \
+#               micromamba run -n unicycler unicycler --version
+#
+FROM docker.io/mambaorg/micromamba:1.5.10
+
+LABEL org.opencontainers.image.title="gourgouthakas-genomes" \
+      org.opencontainers.image.description="Genome assembly + QC (fastp, fastplong, unicycler, autocycler, quast)"
+
+# base env: GNU parallel job runner + fetch/unpack utilities.
+RUN micromamba install -y -n base -c conda-forge -c bioconda \
+        parallel \
+        wget \
+        gzip \
+        tar \
+        coreutils \
+    && micromamba clean --all --yes
+
+# QC env: short- and long-read quality filtering.
+RUN micromamba create -y -n qc -c conda-forge -c bioconda \
+        fastp \
+        fastplong \
+    && micromamba clean --all --yes
+
+# Unicycler hybrid assembly (pulls SPAdes, BLAST, samtools, bowtie2).
+RUN micromamba create -y -n unicycler -c conda-forge -c bioconda \
+        unicycler \
+    && micromamba clean --all --yes
+
+# Autocycler long-read consensus assembly + the assemblers it orchestrates.
+RUN micromamba create -y -n autocycler -c conda-forge -c bioconda \
+        autocycler \
+        flye \
+        miniasm \
+        raven-assembler \
+        canu \
+        minimap2 \
+        any2fasta \
+    && micromamba clean --all --yes
+
+# Assembly statistics.
+RUN micromamba create -y -n quast -c conda-forge -c bioconda \
+        quast \
+    && micromamba clean --all --yes
+
+WORKDIR /work
+
+# Default: print each tool's version so `podman run gourgouthakas-genomes` is a
+# smoke test. Use a non-login shell: a login shell (-l) re-sources /etc/profile
+# and drops the conda bin dir from PATH (see CLAUDE.md). Tools live in separate
+# envs, so each is reached via `micromamba run -n <env>`.
+CMD ["bash","-c","\
+        parallel --version 2>&1 | head -1; \
+        micromamba run -n qc fastp --version 2>&1 | head -1; \
+        micromamba run -n qc fastplong --version 2>&1 | head -1; \
+        micromamba run -n unicycler unicycler --version 2>&1 | head -1; \
+        micromamba run -n autocycler autocycler --version 2>&1 | head -1; \
+        micromamba run -n quast quast --version 2>&1 | head -1"]
