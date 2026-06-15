@@ -18,6 +18,8 @@ analyses reproduce on machines where the bioinformatics tools won't install
 natively. **Step-by-step commands and reference detail live in
 [`notes.md`](notes.md);** this README is the overview.
 
+Parts of this analysis was assisted with Claude Code model Opus 4.8.
+
 ## Pipelines
 
 | Track | Scripts | Container |
@@ -62,9 +64,9 @@ and per-isolate functions are exported and analysed in R with
 Isolates were identified by Sanger 16S (27f primer); raw `.ab1` traces live under
 `data/` (one directory per plate, plus the premixed set). The
 [isolateR](https://github.com/bdaisley/isolateR) workflow (Daisley et al. 2024,
-*Bioinformatics* 40(7):btae448) was rebuilt with vibe coding and manual evaluation
-as command-line steps in the
-`sanger16s` podman container, because the R package would not install:
+*Bioinformatics* 40(7):btae448) is the structure and parameters. Some parts were
+run on Biopython implementation as command-line steps in the
+`sanger16s` podman container:
 
 | isolateR step | Script | Does |
 |---|---|---|
