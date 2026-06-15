@@ -334,6 +334,36 @@ ex_raw <- ex_raw %>%
   filter(!is.na(Treatment))
 
 # -------------------------
+# 2.1b AUDPC from the raw d.p.i. severities (trapezoidal rule)
+#   Recomputes AUDPC so it does not depend on the sheet's precomputed column.
+#     x = severity values for one replicate
+#     t = matching time points (days); defaults to 1, 2, ... in column order
+#   Trapezoidal integration: sum of (y_i + y_{i+1})/2 * (t_{i+1} - t_i).
+#   NA-tolerant; needs >= 2 valid points or returns NA.
+# -------------------------
+audpc2 <- function(x, t = seq_along(x)) {
+  ok <- !is.na(x) & !is.na(t)
+  x <- x[ok]; t <- t[ok]
+  if (length(x) < 2) return(NA_real_)
+  o <- order(t); x <- x[o]; t <- t[o]
+  sum((x[-1] + x[-length(x)]) / 2 * diff(t))
+}
+
+# day number parsed from each d.p.i. column name ("3 d.p.i." -> 3)
+dpi_days <- readr::parse_number(dpi_cols)
+
+# per-replicate AUDPC recomputed from the raw severities.
+# The sheet's AUDPC anchors disease at inoculation (day 0, severity 0), i.e. it
+# includes the leading day0->day1 trapezoid; we prepend (t=0, y=0) to match it.
+ex_raw$AUDPC2 <- apply(as.matrix(ex_raw[dpi_cols]), 1,
+                       function(r) audpc2(c(0, r), t = c(0, dpi_days)))
+
+# sanity check vs the sheet's precomputed AUDPC column
+cat("\n=== AUDPC recompute (audpc2) vs sheet AUDPC ===\n")
+cat("max abs difference:",
+    max(abs(ex_raw$AUDPC2 - ex_raw$AUDPC), na.rm = TRUE), "\n")
+
+# -------------------------
 # 2.2 Per-d.p.i. ANOVA + Tukey HSD
 #     A column with no within-data variance (e.g. 1 d.p.i. is constant)
 #     cannot be tested; it is reported as NA rather than crashing the run.
@@ -427,18 +457,52 @@ audpc_summary <- ex_raw %>%
     .groups = "drop"
   )
 
-# Colour-blind safe palette, one colour per treatment
+# Colour-blind safe palette (Okabe-Ito), one colour per treatment.
+# Hues chosen for maximal separation under all colour-vision types:
+# grey (neutral baseline) / red-orange (disease) / blue / bluish-green.
 treatment_palette <- c(
-  "Control"     = "#999999",
-  "B. cinerea"  = "#D55E00",
-  "B.c.+X"      = "#E69F00",
-  "B.c.+SRL917" = "#009E73"
+  "Control"     = "#999999",  # grey
+  "B. cinerea"  = "#D55E00",  # vermillion
+  "B.c.+X"      = "#0072B2",  # blue
+  "B.c.+SRL917" = "#009E73"   # bluish green
 )
 
 # -------------------------
 # 2.6 Grouped (position-dodge) bar plot: disease severity per d.p.i.
+#     Significance stars = each treatment vs B. cinerea (pathogen alone) at that
+#     d.p.i. (Tukey HSD post-hoc p-adjusted): *** <0.001, ** <0.01, * <0.05, ns.
 # -------------------------
 dodge <- position_dodge(width = 0.8)
+
+sig_stars <- function(p) cut(
+  p, breaks = c(-Inf, 0.001, 0.01, 0.05, Inf),
+  labels = c("***", "**", "*", "ns"), right = FALSE
+)
+
+# Tukey comparisons that involve B. cinerea; the starred treatment is the other
+# side of each pairwise contrast (no treatment label contains a "-", so the
+# split is unambiguous). One row per (dpi, treatment).
+ref_treatment <- "B. cinerea"
+stars_vs_pathogen <- tukey_dpi %>%
+  separate(comparison, into = c("side_a", "side_b"), sep = "-", remove = FALSE) %>%
+  filter(side_a == ref_treatment | side_b == ref_treatment) %>%
+  transmute(
+    dpi       = dpi,
+    Treatment = if_else(side_a == ref_treatment, side_b, side_a),
+    stars     = as.character(sig_stars(p_adj))
+  )
+
+# Attach to the bar summary so each label sits just above its bar+SE.
+# B. cinerea (the reference) keeps a blank label so position_dodge stays aligned.
+stars_df <- dpi_summary %>%
+  mutate(dpi = as.character(dpi)) %>%
+  left_join(stars_vs_pathogen, by = c("dpi", "Treatment")) %>%
+  mutate(
+    stars     = ifelse(is.na(stars), "", stars),
+    dpi       = factor(dpi, levels = dpi_cols),
+    Treatment = factor(Treatment, levels = treatment_levels),
+    y         = mean + se
+  )
 
 bar_dpi <- ggplot(dpi_summary, aes(x = dpi, y = mean, fill = Treatment)) +
   geom_col(width = 0.7, position = dodge, colour = "black", linewidth = 0.3) +
@@ -446,12 +510,21 @@ bar_dpi <- ggplot(dpi_summary, aes(x = dpi, y = mean, fill = Treatment)) +
     aes(ymin = mean - se, ymax = mean + se),
     width = 0.2, linewidth = 0.4, position = dodge
   ) +
+  geom_text(
+    data = stars_df,
+    aes(x = dpi, y = y, label = stars, group = Treatment),
+    position = dodge, vjust = -0.6, size = 3.2, fontface = "bold",
+    inherit.aes = FALSE
+  ) +
   scale_fill_manual(values = treatment_palette, name = "Treatment") +
+  scale_y_continuous(
+    breaks = scales::breaks_width(5),
+    expand = expansion(mult = c(0, 0.08))
+  ) +
   labs(
-    title    = "Ex vivo disease severity over time",
-    subtitle = expression(paste("Mean disease severity (%) per d.p.i.; error bars = SE")),
     x = "Days post inoculation",
-    y = "Disease severity (%)"
+    y = "Spot diameter (mm)",
+    caption = "Stars: treatment vs B. cinerea at each d.p.i. (Tukey HSD); *** p<0.001, ** p<0.01, * p<0.05, ns p>=0.05"
   ) +
   theme_pub(base_size = 12) +
   theme(legend.position = "top",
@@ -459,7 +532,22 @@ bar_dpi <- ggplot(dpi_summary, aes(x = dpi, y = mean, fill = Treatment)) +
 
 # -------------------------
 # 2.7 Bar plot: AUDPC per treatment
+#     Stars = each treatment vs B. cinerea (Tukey HSD on AUDPC), above error bars.
 # -------------------------
+stars_audpc <- tukey_audpc %>%
+  separate(comparison, into = c("side_a", "side_b"), sep = "-", remove = FALSE) %>%
+  filter(side_a == ref_treatment | side_b == ref_treatment) %>%
+  transmute(
+    Treatment = if_else(side_a == ref_treatment, side_b, side_a),
+    stars     = as.character(sig_stars(p_adj))
+  ) %>%
+  right_join(audpc_summary, by = "Treatment") %>%
+  mutate(
+    stars     = ifelse(is.na(stars), "", stars),  # B. cinerea reference = blank
+    Treatment = factor(Treatment, levels = treatment_levels),
+    y         = mean + se
+  )
+
 bar_audpc <- ggplot(audpc_summary,
                     aes(x = Treatment, y = mean, fill = Treatment)) +
   geom_col(width = 0.65, colour = "black", linewidth = 0.3) +
@@ -467,12 +555,19 @@ bar_audpc <- ggplot(audpc_summary,
     aes(ymin = mean - se, ymax = mean + se),
     width = 0.18, linewidth = 0.4
   ) +
+  geom_text(
+    data = stars_audpc,
+    aes(x = Treatment, y = y, label = stars),
+    vjust = -0.6, size = 3.5, fontface = "bold", inherit.aes = FALSE
+  ) +
   scale_fill_manual(values = treatment_palette, guide = "none") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.08))) +
   labs(
     title    = "Ex vivo AUDPC by treatment",
     subtitle = "Area under the disease progress curve; error bars = SE",
     x = NULL,
-    y = "AUDPC"
+    y = "AUDPC",
+    caption = "vs B. cinerea (Tukey HSD): *** p<0.001, ** p<0.01, * p<0.05, ns"
   ) +
   theme_pub(base_size = 12) +
   theme(axis.text.x = element_text(face = "italic"))
