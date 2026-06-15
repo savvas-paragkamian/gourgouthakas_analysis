@@ -1,9 +1,7 @@
 # Companion analysis of Gourgouthakas cave biobank
 
-Biobank of microbial isolates from the **Gourgouthakas cave** (Crete, Greece),
+This repository holds the analysis of that biobank from the **Gourgouthakas cave** (Crete, Greece),
 contains more than 820 isolates from samples across nine depths down to −1100 m.
-This repository holds the
-reproducible analysis of that biobank, in three tracks:
 
 1. **Genome assembly, QC and Annotation** of the cave *Streptomyces* , *Nocardiopsis* and *Pseudomonas* isolates (hybrid
    short + long read assembly).
@@ -20,7 +18,7 @@ natively. **Step-by-step commands and reference detail live in
 
 Parts of this analysis was assisted with Claude Code model Opus 4.8.
 
-## Pipelines
+## Parts
 
 | Track | Scripts | Container |
 |---|---|---|
