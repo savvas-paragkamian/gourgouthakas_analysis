@@ -111,3 +111,28 @@ podman run --rm -e COLLAPSE=genus -v "$PWD":/work -w /work sanger16s Rscript scr
 
 → [Concordance internals, table columns, the WGS override, and the figure
 variants (`TAX=silva`, `COLLAPSE`, `07`) in `notes.md`](notes.md#gtdb-placement-and-depth-figures).
+
+## Phytopathogen antagonism
+
+[`scripts/pathogen_inhibition.R`](scripts/pathogen_inhibition.R) (run in the
+`sanger16s` image) has two parts:
+
+- **Part 1 — in vitro screen** of the isolates against six phytopathogens
+  (`data/in_vitro_phytopathogens_inhibition.txt`): inhibition-score heatmap and
+  per-genus bar/bubble figures → `plots/`.
+- **Part 2 — ex-vivo *Botrytis cinerea* biocontrol** (`data/ex-vivo-inhibition_
+  B.c._SRL917_gourgouthakas.xlsx`, sheet `raw`; four treatments × 20 reps). Per
+  d.p.i. **one-way ANOVA + Tukey HSD** (each treatment vs *B. cinerea* alone)
+  and an `audpc2()` trapezoidal **AUDPC** (anchored at inoculation day 0,
+  reproducing the sheet exactly). Stats → `results/ex_vivo_anova.tsv`,
+  `results/ex_vivo_tukey.tsv`; grouped per-d.p.i. and AUDPC bar plots (SE error
+  bars, Tukey significance stars) → `plots/ex_vivo_barplot_{dpi,audpc}.png`.
+
+**SRL917** suppresses disease at every time point (`***`, AUDPC 24 vs 77 for the
+pathogen alone); the **X** product is significant only early/mid and by AUDPC,
+but not at 5–6 d.p.i. (small effect swamped by the pathogen group's high
+late-stage variance).
+
+```
+podman run --rm -v "$PWD":/work -w /work/scripts sanger16s Rscript pathogen_inhibition.R
+```

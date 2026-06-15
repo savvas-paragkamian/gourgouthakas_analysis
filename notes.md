@@ -489,3 +489,87 @@ saved under the separate name `merged.fasttree_genus_tree.*` (pass
 podman run --rm -v "$PWD":/work -w /work sanger16s \
   Rscript scripts/sanger/07_fasttree_genus_tree.R
 ```
+
+## Phytopathogen antagonism
+
+[`scripts/pathogen_inhibition.R`](scripts/pathogen_inhibition.R) runs in the
+`sanger16s` image and has two independent parts. Because the script uses
+`../data`, `../results`, `../plots` relative paths, run it with the working
+directory set to `scripts/`:
+
+```
+podman run --rm -v "$PWD":/work -w /work/scripts sanger16s \
+  Rscript pathogen_inhibition.R
+```
+
+On a Linux/SELinux host (so the figures land owned by you) add
+`--user root --security-opt label=disable`, as for the `06`/`07` figures.
+
+### Part 1 — in vitro screen
+
+Reads `data/in_vitro_phytopathogens_inhibition.txt` (isolate × six phytopathogen
+inhibition scores), joins `results/taxonomy_per_microbe.tsv` for the GTDB genus,
+keeps isolates with `silva_pct_id > 95`, and draws:
+
+- `plots/figure_heatmap_inhibition.png` — per-isolate × pathogen inhibition
+  heatmap (viridis magma).
+- `plots/figure_barplot_genus_inhibition.png` — mean inhibition per genus (SE).
+- `plots/bubble_strong_isolates.png` — bubble plot, size = mean inhibition,
+  colour = number of strong (>0.5) isolates per genus.
+
+### Part 2 — ex-vivo *Botrytis cinerea* biocontrol
+
+Reads the **`raw`** sheet of
+`data/ex-vivo-inhibition_B.c._SRL917_gourgouthakas.xlsx`: one row per replicate,
+disease severity (lesion, mm) at 1–6 d.p.i. plus a precomputed `AUDPC`, across
+four treatments (20 reps each): `Control`, `B. cinerea` (pathogen alone),
+`B.c.+X` (X product), `B.c.+SRL917` (cave isolate). The first column is unnamed
+in the sheet and is renamed `Treatment`; treatment order is fixed as a factor so
+plots and the ANOVA reference are stable.
+
+**AUDPC (`audpc2`).** A small trapezoidal-rule helper recomputes AUDPC from the
+raw severities so the figure does not depend on the sheet's column:
+
+```r
+audpc2 <- function(x, t = seq_along(x)) { ... sum((x[-1]+x[-length(x)])/2 * diff(t)) }
+```
+
+The sheet anchors disease at **inoculation (day 0, severity 0)** — i.e. it
+includes the leading day0→day1 trapezoid — so the script calls
+`audpc2(c(0, severities), t = c(0, dpi_days))`, which reproduces the sheet's
+`AUDPC` **exactly** (max abs difference = 0). Dropping the day-0 anchor lowers
+every diseased replicate by a constant 1.75 and no longer matches the sheet.
+
+**Statistics.** For each d.p.i. column and for AUDPC: one-way **ANOVA**
+(`aov(value ~ Treatment)`) followed by **Tukey HSD** post-hoc on all six
+pairwise contrasts. A guard reports a column as `not testable` (NA) instead of
+crashing if it has no within-data variance. Results are written to:
+
+- `results/ex_vivo_anova.tsv` — `dpi, df_between, df_within, F, p, note`.
+- `results/ex_vivo_tukey.tsv` — `dpi, comparison, diff, lwr, upr, p_adj` (all
+  pairwise comparisons, every d.p.i. + AUDPC).
+
+**Figures.** Both bar plots use the Okabe-Ito colour-blind palette (grey /
+vermillion / blue / bluish-green), SE error bars, and significance stars placed
+above the error bars — each treatment **vs `B. cinerea`** (the pathogen-alone
+reference, left unlabelled): `*** p<0.001, ** p<0.01, * p<0.05, ns`.
+
+- `plots/ex_vivo_barplot_dpi.png` — grouped (position-dodge) bars, mean severity
+  per d.p.i., y-axis at 5-unit breaks.
+- `plots/ex_vivo_barplot_audpc.png` — mean AUDPC per treatment.
+
+The stars come from the Tukey table by keeping the contrasts that involve
+`B. cinerea` and labelling the *other* side (no treatment name contains a `-`,
+so splitting the `comparison` string on `-` is unambiguous).
+
+**Reading the result.** `B.c.+SRL917` is significant at every assessment
+(`***`; AUDPC ≈ 24 vs ≈ 77 for the pathogen alone) — a large, low-variance
+reduction. `B.c.+X` is significant early/mid d.p.i. and by AUDPC (`**`,
+p ≈ 0.003) but **n.s. at 5–6 d.p.i.**: its effect there is small (~3–5 mm) while
+the `B. cinerea` group's variance balloons late (SD ≈ 8–9 mm, lesions 4–52 mm),
+so the difference is swamped — and Tukey's family-wise critical value (the
+studentized-range threshold for four groups) pushes a borderline day-6 contrast
+(raw p ≈ 0.04) up to p ≈ 0.10. The Control–vs–pathogen star sits at the ~0
+baseline; per-day testing treats each day independently, so a
+repeated-measures/mixed model or the AUDPC contrast is the more powerful way to
+judge the X product's overall trajectory.
