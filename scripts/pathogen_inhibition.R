@@ -1,8 +1,12 @@
 #!/usr/bin/env Rscript
 
 # ============================================================
-# Publication figures for in vitro phytopathogen inhibition
+# PART 1 - Publication figures for in vitro phytopathogen inhibition
 # Input file: in_vitro_phytopathogens_inhibition.txt
+#
+# PART 2 (further below) - Ex-vivo Botrytis cinerea biocontrol
+# statistics (per-d.p.i. ANOVA + Tukey HSD, AUDPC) and figures.
+# Input file: ex-vivo-inhibition_B.c._SRL917_gourgouthakas.xlsx (sheet "raw")
 # ============================================================
 
 # -------------------------
@@ -11,6 +15,7 @@
 packages <- c(
   "tidyverse",
   "readr",
+  "readxl",
   "forcats",
   "viridis",
   "scales",
@@ -73,7 +78,7 @@ pathogen_labels <- c(
   "Phytophthora nicotianae_class"            = "P. nicotianae"
 )
 
- -------------------------
+# -------------------------
 # 6. Long format for plotting
 # -------------------------
 df_long <- df_clean %>%
@@ -284,4 +289,199 @@ p <- ggplot(
 # Save
 # -------------------------
 ggsave("../plots/bubble_strong_isolates.png", p, width=6, height=10, dpi=600)
+
+
+# ============================================================
+# ============================================================
+# PART 2 - Ex-vivo Botrytis cinerea biocontrol statistics
+#   Input: ../data/ex-vivo-inhibition_B.c._SRL917_gourgouthakas.xlsx
+#          sheet "raw" (one row per replicate)
+#   Columns: treatment | 1..6 d.p.i. disease severity (%) | AUDPC
+#   Treatments: Control, B. cinerea, B.c.+X, B.c.+SRL917
+#
+#   Statistics:
+#     - per-d.p.i. one-way ANOVA across treatments + Tukey HSD post-hoc
+#     - one-way ANOVA + Tukey HSD on AUDPC
+#   Figures:
+#     - grouped (position-dodge) bar plot of mean disease severity per d.p.i.
+#     - bar plot of mean AUDPC per treatment
+#   All with SE error bars. Stats written to ../results/.
+# ============================================================
+# ============================================================
+
+# -------------------------
+# 2.1 Read the raw replicate-level sheet
+# -------------------------
+ex_path <- "../data/ex-vivo-inhibition_B.c._SRL917_gourgouthakas.xlsx"
+
+ex_raw <- read_excel(ex_path, sheet = "raw")
+
+# First (unnamed) column holds the treatment label
+names(ex_raw)[1] <- "Treatment"
+
+# d.p.i. severity columns, in day order
+dpi_cols <- c("1 d.p.i.", "2 d.p.i.", "3 d.p.i.",
+              "4 d.p.i.", "5 d.p.i.", "6 d.p.i.")
+
+# Fixed, biologically meaningful treatment order
+treatment_levels <- c("Control", "B. cinerea", "B.c.+X", "B.c.+SRL917")
+
+ex_raw <- ex_raw %>%
+  mutate(
+    Treatment = factor(str_trim(Treatment), levels = treatment_levels),
+    across(all_of(c(dpi_cols, "AUDPC")), as.numeric)
+  ) %>%
+  filter(!is.na(Treatment))
+
+# -------------------------
+# 2.2 Per-d.p.i. ANOVA + Tukey HSD
+#     A column with no within-data variance (e.g. 1 d.p.i. is constant)
+#     cannot be tested; it is reported as NA rather than crashing the run.
+# -------------------------
+anova_one <- function(dat, response) {
+  vals <- dat[[response]]
+  # need >1 group with data and some variance to run an ANOVA
+  if (length(unique(na.omit(vals))) < 2 ||
+      dplyr::n_distinct(dat$Treatment[!is.na(vals)]) < 2) {
+    return(list(
+      anova = tibble(dpi = response, df_between = NA_real_, df_within = NA_real_,
+                     F = NA_real_, p = NA_real_,
+                     note = "no variance - not testable"),
+      tukey = NULL
+    ))
+  }
+  fit  <- aov(reformulate("Treatment", response = response), data = dat)
+  smry <- summary(fit)[[1]]
+  aov_tbl <- tibble(
+    dpi        = response,
+    df_between = smry[["Df"]][1],
+    df_within  = smry[["Df"]][2],
+    F          = smry[["F value"]][1],
+    p          = smry[["Pr(>F)"]][1],
+    note       = NA_character_
+  )
+  tuk <- as.data.frame(TukeyHSD(fit)$Treatment)
+  tuk <- tibble(
+    dpi        = response,
+    comparison = rownames(tuk),
+    diff       = tuk$diff,
+    lwr        = tuk$lwr,
+    upr        = tuk$upr,
+    p_adj      = tuk$`p adj`
+  )
+  list(anova = aov_tbl, tukey = tuk)
+}
+
+dpi_results <- lapply(dpi_cols, anova_one, dat = ex_raw)
+
+anova_dpi <- bind_rows(lapply(dpi_results, `[[`, "anova"))
+tukey_dpi <- bind_rows(lapply(dpi_results, `[[`, "tukey"))
+
+# -------------------------
+# 2.3 AUDPC ANOVA + Tukey HSD
+# -------------------------
+audpc_res   <- anova_one(ex_raw, "AUDPC")
+anova_audpc <- audpc_res$anova %>% mutate(dpi = "AUDPC")
+tukey_audpc <- audpc_res$tukey %>% mutate(dpi = "AUDPC")
+
+# -------------------------
+# 2.4 Write statistics to ../results/
+# -------------------------
+dir.create("../results", showWarnings = FALSE)
+
+write_tsv(bind_rows(anova_dpi, anova_audpc),
+          "../results/ex_vivo_anova.tsv")
+write_tsv(bind_rows(tukey_dpi, tukey_audpc),
+          "../results/ex_vivo_tukey.tsv")
+
+cat("\n=== Ex-vivo per-d.p.i. ANOVA ===\n");  print(as.data.frame(anova_dpi))
+cat("\n=== Ex-vivo AUDPC ANOVA ===\n");        print(as.data.frame(anova_audpc))
+cat("\n=== Ex-vivo Tukey HSD (d.p.i.) ===\n"); print(as.data.frame(tukey_dpi))
+cat("\n=== Ex-vivo Tukey HSD (AUDPC) ===\n");  print(as.data.frame(tukey_audpc))
+
+# -------------------------
+# 2.5 Summaries for plotting (mean +/- SE)
+# -------------------------
+se <- function(x) sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x)))
+
+# Long over d.p.i. for the grouped bar plot
+ex_long <- ex_raw %>%
+  pivot_longer(all_of(dpi_cols), names_to = "dpi", values_to = "severity") %>%
+  mutate(dpi = factor(dpi, levels = dpi_cols))
+
+dpi_summary <- ex_long %>%
+  group_by(Treatment, dpi) %>%
+  summarise(
+    n      = sum(!is.na(severity)),
+    mean   = mean(severity, na.rm = TRUE),
+    se     = se(severity),
+    .groups = "drop"
+  )
+
+audpc_summary <- ex_raw %>%
+  group_by(Treatment) %>%
+  summarise(
+    n      = sum(!is.na(AUDPC)),
+    mean   = mean(AUDPC, na.rm = TRUE),
+    se     = se(AUDPC),
+    .groups = "drop"
+  )
+
+# Colour-blind safe palette, one colour per treatment
+treatment_palette <- c(
+  "Control"     = "#999999",
+  "B. cinerea"  = "#D55E00",
+  "B.c.+X"      = "#E69F00",
+  "B.c.+SRL917" = "#009E73"
+)
+
+# -------------------------
+# 2.6 Grouped (position-dodge) bar plot: disease severity per d.p.i.
+# -------------------------
+dodge <- position_dodge(width = 0.8)
+
+bar_dpi <- ggplot(dpi_summary, aes(x = dpi, y = mean, fill = Treatment)) +
+  geom_col(width = 0.7, position = dodge, colour = "black", linewidth = 0.3) +
+  geom_errorbar(
+    aes(ymin = mean - se, ymax = mean + se),
+    width = 0.2, linewidth = 0.4, position = dodge
+  ) +
+  scale_fill_manual(values = treatment_palette, name = "Treatment") +
+  labs(
+    title    = "Ex vivo disease severity over time",
+    subtitle = expression(paste("Mean disease severity (%) per d.p.i.; error bars = SE")),
+    x = "Days post inoculation",
+    y = "Disease severity (%)"
+  ) +
+  theme_pub(base_size = 12) +
+  theme(legend.position = "top",
+        legend.text = element_text(face = "italic"))
+
+# -------------------------
+# 2.7 Bar plot: AUDPC per treatment
+# -------------------------
+bar_audpc <- ggplot(audpc_summary,
+                    aes(x = Treatment, y = mean, fill = Treatment)) +
+  geom_col(width = 0.65, colour = "black", linewidth = 0.3) +
+  geom_errorbar(
+    aes(ymin = mean - se, ymax = mean + se),
+    width = 0.18, linewidth = 0.4
+  ) +
+  scale_fill_manual(values = treatment_palette, guide = "none") +
+  labs(
+    title    = "Ex vivo AUDPC by treatment",
+    subtitle = "Area under the disease progress curve; error bars = SE",
+    x = NULL,
+    y = "AUDPC"
+  ) +
+  theme_pub(base_size = 12) +
+  theme(axis.text.x = element_text(face = "italic"))
+
+# -------------------------
+# 2.8 Save figures
+# -------------------------
+ggsave("../plots/ex_vivo_barplot_dpi.png",   bar_dpi,
+       width = 8, height = 5, dpi = 600, bg = "white")
+ggsave("../plots/ex_vivo_barplot_audpc.png", bar_audpc,
+       width = 6, height = 5, dpi = 600, bg = "white")
 
