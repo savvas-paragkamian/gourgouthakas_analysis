@@ -523,8 +523,7 @@ bar_dpi <- ggplot(dpi_summary, aes(x = dpi, y = mean, fill = Treatment)) +
   ) +
   labs(
     x = "Days post inoculation",
-    y = "Spot diameter (mm)",
-    caption = "Stars: treatment vs B. cinerea at each d.p.i. (Tukey HSD); *** p<0.001, ** p<0.01, * p<0.05, ns p>=0.05"
+    y = "Spot diameter (mm)"
   ) +
   theme_pub(base_size = 12) +
   theme(legend.position = "top",
@@ -561,22 +560,21 @@ bar_audpc <- ggplot(audpc_summary,
     vjust = -0.6, size = 3.5, fontface = "bold", inherit.aes = FALSE
   ) +
   scale_fill_manual(values = treatment_palette, guide = "none") +
-  scale_y_continuous(expand = expansion(mult = c(0, 0.08))) +
+  scale_y_continuous(
+    breaks = scales::breaks_width(10),
+    expand = expansion(mult = c(0, 0.08))) +
   labs(
-    title    = "Ex vivo AUDPC by treatment",
-    subtitle = "Area under the disease progress curve; error bars = SE",
     x = NULL,
-    y = "AUDPC",
-    caption = "vs B. cinerea (Tukey HSD): *** p<0.001, ** p<0.01, * p<0.05, ns"
+    y = "AUDPC"
   ) +
   theme_pub(base_size = 12) +
-  theme(axis.text.x = element_text(face = "italic"))
+  theme(axis.text.x = element_text(face= "italic", angle = 45,hjust = 1))
 
 # -------------------------
 # 2.8 Save figures
 # -------------------------
 ggsave("../plots/ex_vivo_barplot_dpi.png",   bar_dpi,
-       width = 8, height = 5, dpi = 600, bg = "white")
+       width = 8, height = 6, dpi = 600, bg = "white")
 ggsave("../plots/ex_vivo_barplot_audpc.png", bar_audpc,
-       width = 6, height = 5, dpi = 600, bg = "white")
+       width = 3, height = 5, dpi = 600, bg = "white")
 
